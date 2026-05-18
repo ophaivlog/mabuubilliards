@@ -1,6 +1,22 @@
 const DEFAULT_DEVICE_LIST_PATH = "/api/lapp/device/list";
 const DEFAULT_TOKEN_PATH = "/api/lapp/token/get";
 const DEFAULT_EZOPEN_DOMAIN = "open.ezviz.com";
+const DEFAULT_CAMERA_MAP = {
+  "01": { deviceSerial: "BF3334699", channelNo: 1 },
+  "02": { deviceSerial: "BF3334697", channelNo: 1 },
+  "03": { deviceSerial: "BF3334132", channelNo: 1 },
+  "04": { deviceSerial: "BF3332757", channelNo: 1 },
+  "05": { deviceSerial: "BF3333519", channelNo: 1 },
+  "06": { deviceSerial: "BF3334412", channelNo: 1 },
+  "07": { deviceSerial: "BF3332973", channelNo: 1 },
+  "08": { deviceSerial: "BF3333099", channelNo: 1 },
+  "09": { deviceSerial: "BF3333579", channelNo: 1 },
+  "10": { deviceSerial: "BF3334658", channelNo: 1 },
+  "11": { deviceSerial: "BF9642082", channelNo: 1 },
+  "12": { deviceSerial: "BF9642529", channelNo: 1 },
+  "13": { deviceSerial: "BF9642220", channelNo: 1 },
+  "14": { deviceSerial: "BF9642392", channelNo: 1, validCode: "WRYZOM" },
+};
 const tokenCache = {
   accessToken: null,
   expireAt: 0,
@@ -14,13 +30,13 @@ function json(res, statusCode, body) {
 
 function getCameraMap() {
   if (!process.env.EZVIZ_CAMERA_MAP) {
-    return {};
+    return DEFAULT_CAMERA_MAP;
   }
 
   try {
-    return JSON.parse(process.env.EZVIZ_CAMERA_MAP);
+    return { ...DEFAULT_CAMERA_MAP, ...JSON.parse(process.env.EZVIZ_CAMERA_MAP) };
   } catch (error) {
-    return {};
+    return DEFAULT_CAMERA_MAP;
   }
 }
 
@@ -150,7 +166,7 @@ module.exports = async function handler(req, res) {
   }
 
   const ezopenDomain = process.env.EZVIZ_EZOPEN_DOMAIN || DEFAULT_EZOPEN_DOMAIN;
-  const quality = camera.quality || process.env.EZVIZ_QUALITY || 1;
+  const quality = process.env.EZVIZ_QUALITY || camera.quality || 2;
   const definition = Number(quality) === 1 ? "hd." : "";
   const rawRecType = process.env.EZVIZ_REC_TYPE || "rec";
   const recType = rawRecType === "rec" || rawRecType.endsWith(".rec") ? rawRecType : `${rawRecType}.rec`;

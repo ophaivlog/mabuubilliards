@@ -550,15 +550,17 @@ main {
 }
 
 .single-camera-preview.playback-mode {
-  aspect-ratio: auto;
-  min-height: 420px;
-  overflow: auto;
-  -webkit-overflow-scrolling: touch;
+  aspect-ratio: 16 / 10;
+  height: auto;
+  min-height: 0;
+  max-height: none;
+  overflow: hidden;
 }
 
 .single-camera-preview.playback-mode #ezvizPlayer {
-  min-height: 420px;
-  overflow: visible;
+  height: 100%;
+  min-height: 100%;
+  overflow: hidden;
 }
 
 .single-camera-preview.live-mode [class*="toolbar"],
@@ -739,6 +741,13 @@ code {
   .single-camera-preview {
     width: 100%;
     max-height: 52vh;
+  }
+
+  .single-camera-preview.playback-mode {
+    aspect-ratio: auto;
+    height: min(78vh, 520px);
+    min-height: 420px;
+    max-height: none;
   }
 
   .preset-group,

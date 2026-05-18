@@ -242,7 +242,11 @@ function bindCameraSelector() {
     preview.innerHTML = `<div id="ezvizPlayer"></div>`;
     const isMobile = window.matchMedia("(max-width: 640px)").matches;
     const width = preview.clientWidth || 960;
-    const height = Math.round(width * (data.playback && isMobile ? 1.18 : 0.5625));
+    const height = data.playback
+      ? isMobile
+        ? Math.min(Math.max(Math.round(window.innerHeight * 0.78), 420), 520)
+        : Math.round(width * 0.625)
+      : Math.round(width * 0.5625);
     const template = data.playback
       ? "pcRec"
       : isMobile

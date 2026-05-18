@@ -1,7 +1,22 @@
 const DEFAULT_TOKEN_PATH = "/api/lapp/token/get";
-const DEFAULT_LIVE_PATH = "/api/lapp/v2/live/address/get";
 const DEFAULT_DEVICE_LIST_PATH = "/api/lapp/device/list";
-const DEFAULT_EZOPEN_DOMAIN = "open.ys7.com";
+const DEFAULT_EZOPEN_DOMAIN = "open.ezviz.com";
+const DEFAULT_CAMERA_MAP = {
+  "01": { deviceSerial: "BF3334699", channelNo: 1 },
+  "02": { deviceSerial: "BF3334697", channelNo: 1 },
+  "03": { deviceSerial: "BF3334132", channelNo: 1 },
+  "04": { deviceSerial: "BF3332757", channelNo: 1 },
+  "05": { deviceSerial: "BF3333519", channelNo: 1 },
+  "06": { deviceSerial: "BF3334412", channelNo: 1 },
+  "07": { deviceSerial: "BF3332973", channelNo: 1 },
+  "08": { deviceSerial: "BF3333099", channelNo: 1 },
+  "09": { deviceSerial: "BF3333579", channelNo: 1 },
+  "10": { deviceSerial: "BF3334658", channelNo: 1 },
+  "11": { deviceSerial: "BF9642082", channelNo: 1 },
+  "12": { deviceSerial: "BF9642529", channelNo: 1 },
+  "13": { deviceSerial: "BF9642220", channelNo: 1 },
+  "14": { deviceSerial: "BF9642392", channelNo: 1, validCode: "WRYZOM" },
+};
 const tokenCache = {
   accessToken: null,
   expireAt: 0,
@@ -15,13 +30,13 @@ function json(res, statusCode, body) {
 
 function getCameraMap() {
   if (!process.env.EZVIZ_CAMERA_MAP) {
-    return {};
+    return DEFAULT_CAMERA_MAP;
   }
 
   try {
-    return JSON.parse(process.env.EZVIZ_CAMERA_MAP);
+    return { ...DEFAULT_CAMERA_MAP, ...JSON.parse(process.env.EZVIZ_CAMERA_MAP) };
   } catch (error) {
-    return {};
+    return DEFAULT_CAMERA_MAP;
   }
 }
 
@@ -33,7 +48,6 @@ async function postForm(url, payload) {
     },
     body: new URLSearchParams(payload),
   });
-
   const text = await response.text();
 
   try {
@@ -41,26 +55,6 @@ async function postForm(url, payload) {
   } catch (error) {
     return { code: String(response.status), msg: text };
   }
-}
-
-async function validateHlsUrl(url) {
-  if (!url || !url.includes(".m3u8")) {
-    return { ok: true };
-  }
-
-  const response = await fetch(url);
-  const playlist = await response.text();
-  const errorMatch = playlist.match(/ErrCode\/([^_\s/]+)_/);
-
-  if (errorMatch) {
-    return {
-      ok: false,
-      code: errorMatch[1],
-      playlist,
-    };
-  }
-
-  return { ok: true };
 }
 
 async function getAccessToken(apiBase) {
@@ -79,19 +73,17 @@ async function getAccessToken(apiBase) {
     return null;
   }
 
-  const tokenPath = process.env.EZVIZ_TOKEN_PATH || DEFAULT_TOKEN_PATH;
-  const tokenResult = await postForm(`${apiBase}${tokenPath}`, {
+  const result = await postForm(`${apiBase}${process.env.EZVIZ_TOKEN_PATH || DEFAULT_TOKEN_PATH}`, {
     appKey,
     appSecret,
   });
-
-  const accessToken = tokenResult?.data?.accessToken;
+  const accessToken = result?.data?.accessToken;
 
   if (!accessToken) {
     return null;
   }
 
-  const expireTime = Number(tokenResult?.data?.expireTime || tokenResult?.data?.expiresIn || 0);
+  const expireTime = Number(result?.data?.expireTime || result?.data?.expiresIn || 0);
   tokenCache.accessToken = accessToken;
   tokenCache.expireAt = expireTime > Date.now() ? expireTime : Date.now() + 6 * 60 * 60 * 1000;
 
@@ -99,21 +91,15 @@ async function getAccessToken(apiBase) {
 }
 
 async function getCameraFromDeviceList(apiBase, accessToken, table) {
-  const deviceListPath = process.env.EZVIZ_DEVICE_LIST_PATH || DEFAULT_DEVICE_LIST_PATH;
-  const listResult = await postForm(`${apiBase}${deviceListPath}`, {
+  const result = await postForm(`${apiBase}${process.env.EZVIZ_DEVICE_LIST_PATH || DEFAULT_DEVICE_LIST_PATH}`, {
     accessToken,
     pageStart: 0,
     pageSize: 50,
   });
-  const devices = Array.isArray(listResult?.data) ? listResult.data : [];
+  const devices = Array.isArray(result?.data) ? result.data : [];
   const tableNumber = String(Number(table));
-  const paddedTableNumber = String(table).padStart(2, "0");
-  const aliases = [
-    `bàn ${tableNumber}`,
-    `ban ${tableNumber}`,
-    `bàn ${paddedTableNumber}`,
-    `ban ${paddedTableNumber}`,
-  ];
+  const padded = String(table).padStart(2, "0");
+  const aliases = [`ban ${tableNumber}`, `ban ${padded}`];
   const normalize = (value) =>
     String(value || "")
       .toLowerCase()
@@ -122,12 +108,7 @@ async function getCameraFromDeviceList(apiBase, accessToken, table) {
       .replace(/\s+/g, " ")
       .trim();
   const normalizedAliases = aliases.map(normalize);
-  const matchesTable = (item) => {
-    const name = normalize(item.deviceName || item.name);
-    return normalizedAliases.some((alias) => name === alias);
-  };
-  const device =
-    devices.find(matchesTable);
+  const device = devices.find((item) => normalizedAliases.some((alias) => normalize(item.deviceName || item.name) === alias));
 
   if (!device?.deviceSerial) {
     return null;
@@ -144,17 +125,16 @@ module.exports = async function handler(req, res) {
     return json(res, 405, { ok: false, message: "Method not allowed" });
   }
 
+  const apiBase = process.env.EZVIZ_API_BASE;
   const table = String(req.query.table || "01").padStart(2, "0");
   const cameraMap = getCameraMap();
-  let camera = cameraMap[table] || cameraMap[`Bàn ${table}`];
-
-  const apiBase = process.env.EZVIZ_API_BASE;
+  let camera = cameraMap[table] || cameraMap[`Ban ${table}`];
 
   if (!apiBase) {
     return json(res, 200, {
       ok: false,
       setupRequired: true,
-      message: "Chưa cấu hình EZVIZ_API_BASE trong Vercel Environment Variables.",
+      message: "Missing EZVIZ_API_BASE.",
     });
   }
 
@@ -165,7 +145,7 @@ module.exports = async function handler(req, res) {
       return json(res, 200, {
         ok: false,
         setupRequired: true,
-        message: "Chưa có EZVIZ_ACCESS_TOKEN hoặc EZVIZ_APP_KEY/EZVIZ_APP_SECRET.",
+        message: "Missing EZVIZ_ACCESS_TOKEN or EZVIZ_APP_KEY/EZVIZ_APP_SECRET.",
       });
     }
 
@@ -177,66 +157,29 @@ module.exports = async function handler(req, res) {
       return json(res, 200, {
         ok: false,
         setupRequired: true,
-        message: `Chưa tìm thấy camera cho bàn ${table}. Hãy cấu hình EZVIZ_CAMERA_MAP hoặc kiểm tra tài khoản EZVIZ có thiết bị chưa.`,
+        message: `Khong tim thay camera cho Ban ${table}.`,
       });
     }
 
-    const livePath = process.env.EZVIZ_LIVE_PATH || DEFAULT_LIVE_PATH;
-    const preferredProtocol = camera.protocol || process.env.EZVIZ_PROTOCOL || 1;
-    const preferredQuality = camera.quality || process.env.EZVIZ_QUALITY || 2;
-    const liveResult = await postForm(`${apiBase}${livePath}`, {
-      accessToken,
-      deviceSerial: camera.deviceSerial,
-      channelNo: camera.channelNo || 1,
-      protocol: preferredProtocol,
-      quality: preferredQuality,
-    });
-
-    const liveUrl =
-      liveResult?.data?.url ||
-      liveResult?.data?.liveAddress ||
-      liveResult?.data?.hls ||
-      liveResult?.data?.rtmp;
     const ezopenDomain = process.env.EZVIZ_EZOPEN_DOMAIN || DEFAULT_EZOPEN_DOMAIN;
-    const validCode = camera.validCode || process.env.EZVIZ_VERIFY_CODE || null;
-    const ezopenSuffix = preferredQuality === 1 ? "hd.live" : "live";
-    const ezopenUrl = liveUrl?.startsWith("ezopen://")
-      ? liveUrl.replace("ezopen://open.ezviz.com/", `ezopen://${ezopenDomain}/`)
-      : `ezopen://${ezopenDomain}/${camera.deviceSerial}/${camera.channelNo || 1}.${ezopenSuffix}`;
-
-    if (!liveUrl) {
-      return json(res, 502, {
-        ok: false,
-        message: liveResult?.msg || "EZVIZ chưa trả về link xem camera.",
-        ezviz: liveResult,
-      });
-    }
-
-    const hlsCheck = await validateHlsUrl(liveUrl);
-
-    if (!hlsCheck.ok) {
-      return json(res, 200, {
-        ok: false,
-        table,
-        message: `EZVIZ đã cấp link nhưng stream trả lỗi ${hlsCheck.code}. Camera chưa phát được HLS trên web.`,
-        streamErrorCode: hlsCheck.code,
-      });
-    }
+    const quality = process.env.EZVIZ_QUALITY || camera.quality || 2;
+    const suffix = Number(quality) === 1 ? "hd.live" : "live";
+    const ezopenUrl = `ezopen://${ezopenDomain}/${camera.deviceSerial}/${camera.channelNo || 1}.${suffix}`;
 
     return json(res, 200, {
       ok: true,
       table,
-      liveUrl,
+      liveUrl: ezopenUrl,
       ezopenUrl,
       accessToken,
-      streamToken: liveResult?.data?.token,
-      validCode,
+      streamToken: null,
+      validCode: camera.validCode || process.env.EZVIZ_VERIFY_CODE || null,
       apiBase,
     });
   } catch (error) {
     return json(res, 500, {
       ok: false,
-      message: "Không gọi được EZVIZ API.",
+      message: "Khong goi duoc EZVIZ API.",
       detail: error.message,
     });
   }
