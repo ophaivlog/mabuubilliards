@@ -549,6 +549,10 @@ main {
   overflow: hidden;
 }
 
+.single-camera-preview.playback-mode {
+  aspect-ratio: 16 / 10;
+}
+
 .single-camera-preview.live-mode [class*="toolbar"],
 .single-camera-preview.live-mode [class*="control"],
 .single-camera-preview.live-mode [class*="full"],
