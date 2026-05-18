@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ma Buu Tournament Bracket</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="#" aria-label="Ma Buu Billiards">
+        <span class="brand-orbit"></span>
+        <span class="brand-text">Ma<br />Buu<span>BILLIARDS</span></span>
+      </a>
+
+      <nav class="main-nav" aria-label="Điều hướng chính">
+        <a href="#">Trang chủ</a>
+        <a href="#">Giải đấu</a>
+        <a href="#">Bảng đấu</a>
+        <a href="#">Liên hệ</a>
+      </nav>
+
+      <button class="download-button" type="button">Tạo giải đấu</button>
+    </header>
+
+    <section class="hero-strip">
+      <div class="hero-inner">
+        <div class="breadcrumbs" aria-label="Breadcrumb">
+          <a href="#">Trang chủ</a>
+          <span></span>
+          <a href="#">Giải đấu</a>
+          <span></span>
+          <a href="#">Chi tiết</a>
+          <span></span>
+        </div>
+        <h1>Quản lý sơ đồ giải đấu</h1>
+      </div>
+    </section>
+
+    <main>
+      <div class="tabs" role="tablist" aria-label="Thông tin giải đấu">
+        <button class="tab" type="button" data-tab="overview"><span>Thông tin</span></button>
+        <button class="tab" type="button" data-tab="schedule"><span>Lịch thi đấu</span></button>
+        <button class="tab" type="button" data-tab="ranking"><span>Xếp hạng</span></button>
+        <button class="tab active" type="button" data-tab="bracket"><span>Sơ đồ cây</span></button>
+        <button class="tab" type="button" data-tab="camera"><span>Check cam</span></button>
+        <button class="tab" type="button" data-tab="download"><span>Tải về</span></button>
+      </div>
+
+      <section class="panel" id="overview" hidden>
+        <div class="info-grid">
+          <article>
+            <small>Tên giải</small>
+            <strong>Chưa thiết lập</strong>
+          </article>
+          <article>
+            <small>Thời gian</small>
+            <strong>Chưa thiết lập</strong>
+          </article>
+          <article>
+            <small>Thể thức</small>
+            <strong>Chưa thiết lập</strong>
+          </article>
+        </div>
+      </section>
+
+      <section class="panel" id="schedule" hidden>
+        <div class="empty-state">Chưa có lịch thi đấu.</div>
+      </section>
+
+      <section class="panel" id="ranking" hidden>
+        <div class="empty-state">Chưa có dữ liệu xếp hạng.</div>
+      </section>
+
+      <section class="panel bracket-panel" id="bracket">
+        <div class="tournament-title">
+          <p>GIẢI ĐẤU</p>
+          <h2>MA BUU BILLIARDS TOURNAMENT</h2>
+        </div>
+        <div class="bracket-scroll" aria-label="Sơ đồ thi đấu có thể cuộn ngang">
+          <div class="bracket" id="bracketCanvas"></div>
+        </div>
+      </section>
+
+      <section class="panel camera-panel" id="camera" hidden>
+        <div class="camera-header">
+          <div>
+            <p>CAMERA BÀN</p>
+            <h2>Khách xem trực tiếp và xem lại camera</h2>
+          </div>
+          <form class="clip-form">
+            <label>
+              Bàn
+              <select>
+                <option>Bàn 01</option>
+                <option>Bàn 02</option>
+                <option>Bàn 03</option>
+                <option>Bàn 04</option>
+                <option>Bàn 05</option>
+                <option>Bàn 06</option>
+                <option>Bàn 07</option>
+                <option>Bàn 08</option>
+                <option>Bàn 09</option>
+                <option>Bàn 10</option>
+                <option>Bàn 11</option>
+                <option>Bàn 12</option>
+                <option>Bàn 13</option>
+                <option>Bàn 14</option>
+              </select>
+            </label>
+            <button id="openCamera" type="button">Live</button>
+          </form>
+        </div>
+
+        <div class="single-camera">
+          <div class="single-camera-preview" id="selectedCameraPreview">
+            <span>Chưa kết nối camera</span>
+          </div>
+          <div class="camera-status" id="cameraStatus">Chọn bàn để xem lại 30 phút gần nhất.</div>
+          <div class="single-camera-info">
+            <div>
+              <p>Đang chọn</p>
+              <strong id="selectedTableName">Bàn 01</strong>
+              <span>Xem live hoặc chọn khoảng thời gian để xem lại.</span>
+            </div>
+            <div class="single-camera-actions">
+              <div class="playback-tools">
+                <div class="tool-label">Khoảng xem lại</div>
+                <div class="preset-group" aria-label="Khoảng xem lại nhanh">
+                  <button class="camera-action playback-option" data-minutes="5" type="button">5 phút</button>
+                  <button class="camera-action playback-option" data-minutes="15" type="button">15 phút</button>
+                  <button class="camera-action playback-option active" data-minutes="30" type="button">30 phút</button>
+                  <button class="camera-action playback-option" data-custom="true" type="button">Tùy chọn</button>
+                </div>
+                <div class="custom-time" id="customTime" hidden>
+                  <label>
+                    Từ
+                    <input id="clipBegin" type="datetime-local" />
+                  </label>
+                  <label>
+                    Đến
+                    <input id="clipEnd" type="datetime-local" />
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" id="download" hidden>
+        <div class="empty-state">Chưa có file để tải về.</div>
+      </section>
+    </main>
+
+    <script src="https://unpkg.com/ezuikit-js@8.1.14/ezuikit.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
+    <script src="script.js"></script>
+  </body>
+</html>
