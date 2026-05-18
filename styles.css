@@ -550,7 +550,15 @@ main {
 }
 
 .single-camera-preview.playback-mode {
-  aspect-ratio: 4 / 3;
+  aspect-ratio: auto;
+  min-height: 420px;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.single-camera-preview.playback-mode #ezvizPlayer {
+  min-height: 420px;
+  overflow: visible;
 }
 
 .single-camera-preview.live-mode [class*="toolbar"],
