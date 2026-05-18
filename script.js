@@ -240,8 +240,16 @@ function bindCameraSelector() {
     preview.classList.toggle("live-mode", !data.playback);
     preview.classList.toggle("playback-mode", !!data.playback);
     preview.innerHTML = `<div id="ezvizPlayer"></div>`;
+    const isMobile = window.matchMedia("(max-width: 640px)").matches;
     const width = preview.clientWidth || 960;
-    const height = preview.clientHeight || Math.round(width * 0.625);
+    const height = Math.round(width * 0.5625);
+    const template = data.playback
+      ? isMobile
+        ? "mobileRec"
+        : "pcRec"
+      : isMobile
+        ? "mobileLive"
+        : "pcLive";
 
     ezvizPlayer = new EZUIKit.EZUIKitPlayer({
       id: "ezvizPlayer",
@@ -251,7 +259,7 @@ function bindCameraSelector() {
       width,
       height,
       autoplay: true,
-      template: data.playback ? "pcRec" : "pcLive",
+      template,
       env: data.apiBase ? { domain: data.apiBase } : undefined,
       handleError: (error) => {
         status.textContent = `EZVIZ player lỗi: ${JSON.stringify(error)}`;
