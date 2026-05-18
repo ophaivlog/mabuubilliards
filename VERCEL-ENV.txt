@@ -1,6 +1,6 @@
 EZVIZ_API_BASE=https://isgpopen.ezvizlife.com
 EZVIZ_APP_KEY=6670568989044098809731cc0e5ca93c
-EZVIZ_APP_SECRET=dan_app_secret_cua_anh_vao_day
+EZVIZ_APP_SECRET=1ab4f8bc87f64942a54f6cd3e3495fc5
 EZVIZ_EZOPEN_DOMAIN=open.ezviz.com
 EZVIZ_REC_TYPE=rec
 EZVIZ_CAMERA_MAP={"14":{"deviceSerial":"BF9642392","channelNo":1,"quality":1,"validCode":"WRYZOM"}}
