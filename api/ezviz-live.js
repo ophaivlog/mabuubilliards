@@ -122,9 +122,12 @@ async function getCameraFromDeviceList(apiBase, accessToken, table) {
       .replace(/\s+/g, " ")
       .trim();
   const normalizedAliases = aliases.map(normalize);
+  const matchesTable = (item) => {
+    const name = normalize(item.deviceName || item.name);
+    return normalizedAliases.some((alias) => name === alias);
+  };
   const device =
-    devices.find((item) => normalizedAliases.includes(normalize(item.deviceName || item.name))) ||
-    devices.find((item) => normalizedAliases.some((alias) => normalize(item.deviceName || item.name).includes(alias)));
+    devices.find(matchesTable);
 
   if (!device?.deviceSerial) {
     return null;

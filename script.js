@@ -244,9 +244,7 @@ function bindCameraSelector() {
     const width = preview.clientWidth || 960;
     const height = Math.round(width * 0.5625);
     const template = data.playback
-      ? isMobile
-        ? "mobileRec"
-        : "pcRec"
+      ? "pcRec"
       : isMobile
         ? "mobileLive"
         : "pcLive";
@@ -332,7 +330,7 @@ function bindCameraSelector() {
 
       data.playback = true;
       renderEzvizPlayer(data);
-      status.textContent = `${select.value} đang xem lại. Có thể tua trên thanh thời gian.`;
+      status.textContent = `${select.value} đang xem lại. Dùng thanh tua gốc của EZVIZ bên trong khung video.`;
     } catch (error) {
       renderPlaceholder(`${select.value} - chưa mở được xem lại`);
       status.textContent = `Không gọi được playback: ${error.message}`;

@@ -89,7 +89,8 @@ async function findCameraByName(apiBase, accessToken, table) {
       .replace(/[\u0300-\u036f]/g, "")
       .replace(/\s+/g, " ")
       .trim();
-  const device = devices.find((item) => aliases.some((alias) => normalize(item.deviceName || item.name).includes(alias)));
+  const normalizedAliases = aliases.map(normalize);
+  const device = devices.find((item) => normalizedAliases.some((alias) => normalize(item.deviceName || item.name) === alias));
 
   if (!device?.deviceSerial) {
     return null;
