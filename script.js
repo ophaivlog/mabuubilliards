@@ -242,11 +242,7 @@ function bindCameraSelector() {
     preview.innerHTML = `<div id="ezvizPlayer"></div>`;
     const isMobile = window.matchMedia("(max-width: 640px)").matches;
     const width = preview.clientWidth || 960;
-    const height = data.playback
-      ? isMobile
-        ? Math.min(Math.max(Math.round(window.innerHeight * 0.78), 420), 520)
-        : Math.round(width * 0.625)
-      : Math.round(width * 0.5625);
+    const height = Math.round(width * 0.5625);
     const template = data.playback
       ? "pcRec"
       : isMobile
@@ -262,6 +258,8 @@ function bindCameraSelector() {
       height,
       autoplay: true,
       template,
+      fit: "contain",
+      objectFit: "contain",
       env: data.apiBase ? { domain: data.apiBase } : undefined,
       handleError: (error) => {
         status.textContent = `EZVIZ player lỗi: ${JSON.stringify(error)}`;
