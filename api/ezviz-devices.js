@@ -29,10 +29,6 @@ async function postForm(url, payload) {
 }
 
 async function getAccessToken(apiBase) {
-  if (process.env.EZVIZ_ACCESS_TOKEN) {
-    return process.env.EZVIZ_ACCESS_TOKEN;
-  }
-
   if (tokenCache.accessToken && Date.now() < tokenCache.expireAt - 60_000) {
     return tokenCache.accessToken;
   }
@@ -41,7 +37,7 @@ async function getAccessToken(apiBase) {
   const appSecret = process.env.EZVIZ_APP_SECRET;
 
   if (!appKey || !appSecret) {
-    return null;
+    return process.env.EZVIZ_ACCESS_TOKEN || null;
   }
 
   const result = await postForm(`${apiBase}${process.env.EZVIZ_TOKEN_PATH || DEFAULT_TOKEN_PATH}`, {
@@ -51,7 +47,7 @@ async function getAccessToken(apiBase) {
   const accessToken = result?.data?.accessToken;
 
   if (!accessToken) {
-    return null;
+    return process.env.EZVIZ_ACCESS_TOKEN || null;
   }
 
   const expireTime = Number(result?.data?.expireTime || result?.data?.expiresIn || 0);

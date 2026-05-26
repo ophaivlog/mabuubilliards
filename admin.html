@@ -3,42 +3,66 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Ma Buu Tournament Viewer</title>
+    <title>Ma Buu Tournament Admin</title>
     <link rel="stylesheet" href="styles.css?v=20260524-12" />
   </head>
-  <body data-mode="viewer">
-    <header class="site-header">
-      <a class="brand" href="#" aria-label="Ma Buu Billiards">
+  <body data-mode="admin" data-auth="locked">
+    <section class="admin-login" id="adminLogin">
+      <form class="login-box" id="adminLoginForm">
+        <span class="brand-orbit"></span>
+        <p>ADMIN</p>
+        <h1>Đăng nhập quản lý giải</h1>
+        <label>
+          Email
+          <input id="adminEmail" type="email" autocomplete="email" required />
+        </label>
+        <label>
+          Mật khẩu
+          <input id="adminPassword" type="password" autocomplete="current-password" required />
+        </label>
+        <button class="primary-action" type="submit">Đăng nhập</button>
+        <div class="login-status" id="adminLoginStatus">Dùng tài khoản đã tạo trong Supabase Authentication.</div>
+      </form>
+    </section>
+
+    <header class="site-header" data-auth-required>
+      <a class="brand" href="index.html" aria-label="Ma Buu Billiards">
         <span class="brand-orbit"></span>
         <span class="brand-text">Ma<br />Buu<span>BILLIARDS</span></span>
       </a>
 
       <nav class="main-nav" role="tablist" aria-label="Điều hướng chính">
+        <a href="index.html">Trang người xem</a>
         <button class="tab active" type="button" data-tab="home"><span>Trang chủ</span></button>
         <button class="tab" type="button" data-tab="bracket"><span>Sơ đồ đấu</span></button>
         <button class="tab" type="button" data-tab="tournaments"><span>Giải đấu</span></button>
         <button class="tab" type="button" data-tab="ranking"><span>Xếp hạng</span></button>
+        <button class="tab" type="button" data-tab="camera"><span>Camera</span></button>
         <button class="tab" type="button" data-tab="contact"><span>Liên hệ</span></button>
+        <button class="tab" type="button" data-tab="download"><span>Tải về</span></button>
       </nav>
 
-      <a class="download-button" data-admin-only href="admin.html">Trang admin</a>
+      <div class="header-actions">
+        <button class="download-button" id="quickCreateTournament" type="button">Tạo giải đấu</button>
+        <button class="secondary-action" id="adminLogout" type="button">Đăng xuất</button>
+      </div>
     </header>
 
-    <section class="hero-strip">
+    <section class="hero-strip" data-auth-required>
       <div class="hero-inner">
         <div class="breadcrumbs" aria-label="Breadcrumb">
-          <a href="#">Trang chủ</a>
+          <a href="index.html">Trang người xem</a>
           <span></span>
-          <a href="#">Giải đấu</a>
+          <a href="#">Admin</a>
           <span></span>
-          <a href="#">Chi tiết</a>
+          <a href="#">Quản lý giải</a>
           <span></span>
         </div>
-        <h1>Theo dõi giải đấu Ma Buu</h1>
+        <h1>Admin quản lý giải đấu</h1>
       </div>
     </section>
 
-    <main>
+    <main data-auth-required>
       <div class="cloud-status" id="cloudStatus">Đang kiểm tra dữ liệu...</div>
 
       <section class="panel" id="home">
@@ -51,6 +75,7 @@
           <div class="home-actions">
             <button class="primary-action" data-home-tab="bracket" type="button">Xem sơ đồ đấu</button>
             <button class="secondary-action" data-home-tab="tournaments" type="button">Danh sách giải</button>
+            <button class="secondary-action" data-home-tab="overview" type="button">Thiết lập giải</button>
           </div>
           <div class="home-stat-grid" id="homeStats"></div>
         </div>
@@ -74,7 +99,7 @@
 
       <section class="panel" id="overview" hidden>
         <form class="manager-grid" id="tournamentForm">
-          <div class="form-section" data-admin-only>
+          <div class="form-section">
             <p>THIẾT LẬP</p>
             <h2>Thông tin giải</h2>
             <label>
@@ -100,40 +125,7 @@
         </form>
       </section>
 
-      <section class="panel" id="registration" data-registration-entry hidden>
-        <div class="manager-grid registration-grid">
-          <form class="form-section" id="registrationForm">
-            <p>ĐĂNG KÝ GIẢI ĐẤU</p>
-            <h2>Gửi thông tin cho admin duyệt</h2>
-            <label>
-              Tên cơ thủ
-              <input id="registrationName" type="text" placeholder="Nhập họ tên" autocomplete="name" required />
-            </label>
-            <label>
-              Số điện thoại
-              <input id="registrationPhone" type="tel" placeholder="Số liên hệ" autocomplete="tel" required />
-            </label>
-            <label>
-              CLB / ghi chú
-              <input id="registrationNote" type="text" placeholder="Tùy chọn" autocomplete="off" />
-            </label>
-            <button class="primary-action" type="submit">Gửi yêu cầu</button>
-            <div class="form-status" id="registrationStatus">Admin sẽ duyệt trước khi tên xuất hiện trong danh sách thi đấu.</div>
-          </form>
-
-          <div class="data-section registration-summary">
-            <div class="section-heading">
-              <div>
-                <p>GIẢI ĐANG MỞ</p>
-                <h2 id="registrationTournamentName">Ma Buu Billiards Tournament</h2>
-              </div>
-            </div>
-            <div class="registration-facts" id="registrationFacts"></div>
-          </div>
-        </div>
-      </section>
-
-      <section class="panel" data-admin-only id="players" hidden>
+      <section class="panel" id="players" hidden>
         <div class="manager-grid">
           <form class="form-section" id="playerForm">
             <p>DANH SÁCH</p>
@@ -163,6 +155,18 @@
         </div>
       </section>
 
+      <section class="panel" id="requests" hidden>
+        <div class="data-section wide-section">
+          <div class="section-heading">
+            <div>
+              <p>DUYỆT ĐĂNG KÝ</p>
+              <h2 id="requestCountLabel">0 yêu cầu chờ duyệt</h2>
+            </div>
+          </div>
+          <div class="request-list" id="registrationRequestList"></div>
+        </div>
+      </section>
+
       <section class="panel" id="schedule" hidden>
         <div class="data-section wide-section">
           <div class="section-heading">
@@ -170,7 +174,7 @@
               <p>LỊCH THI ĐẤU</p>
               <h2>Danh sách trận</h2>
             </div>
-            <button class="secondary-action" data-admin-only id="syncSchedule" type="button">Làm mới</button>
+            <button class="secondary-action" id="syncSchedule" type="button">Làm mới</button>
           </div>
           <div class="table-wrap">
             <table class="data-table">
@@ -223,7 +227,7 @@
             <p>GIẢI ĐẤU</p>
             <h2 id="bracketTitle">MA BUU BILLIARDS TOURNAMENT</h2>
           </div>
-          <div class="bracket-tools" data-admin-only>
+          <div class="bracket-tools">
             <button class="secondary-action" id="resetScores" type="button">Xoá điểm</button>
             <button class="primary-action" id="saveBracket" type="button">Lưu bracket</button>
           </div>
@@ -233,7 +237,19 @@
         </div>
       </section>
 
-      <section class="panel camera-panel" data-admin-only id="camera" hidden>
+      <section class="panel" id="history" hidden>
+        <div class="data-section wide-section">
+          <div class="section-heading">
+            <div>
+              <p>LỊCH SỬ GIẢI ĐẤU</p>
+              <h2>Các giải đã lưu</h2>
+            </div>
+          </div>
+          <div class="history-list" id="historyList"></div>
+        </div>
+      </section>
+
+      <section class="panel camera-panel" id="camera" hidden>
         <div class="camera-header">
           <div>
             <p>CAMERA BÀN</p>
@@ -311,18 +327,6 @@
         </div>
       </section>
 
-      <section class="panel" id="history" hidden>
-        <div class="data-section wide-section">
-          <div class="section-heading">
-            <div>
-              <p>LỊCH SỬ GIẢI ĐẤU</p>
-              <h2>Các giải đã lưu</h2>
-            </div>
-          </div>
-          <div class="history-list" id="historyList"></div>
-        </div>
-      </section>
-
       <section class="panel" id="contact" hidden>
         <div class="contact-section">
           <div class="contact-copy">
@@ -350,11 +354,12 @@
         </div>
       </section>
 
-      <section class="panel" data-admin-only id="download" hidden>
+      <section class="panel" id="download" hidden>
         <div class="manager-grid">
           <div class="form-section">
             <p>XUẤT DỮ LIỆU</p>
             <h2>Tải về</h2>
+            <button class="primary-action" id="archiveTournament" type="button">Lưu vào lịch sử</button>
             <button class="primary-action" id="exportJson" type="button">Tải JSON</button>
             <button class="secondary-action" id="exportCsv" type="button">Tải lịch CSV</button>
             <button class="danger-action" id="clearTournament" type="button">Xoá dữ liệu giải</button>
@@ -365,6 +370,38 @@
         </div>
       </section>
     </main>
+
+    <div class="modal-backdrop" id="createTournamentModal" hidden>
+      <form class="modal-card" id="createTournamentForm">
+        <div class="modal-heading">
+          <div>
+            <p>TẠO MỚI</p>
+            <h2>Tạo giải đấu</h2>
+          </div>
+          <button class="icon-action" id="closeCreateTournament" type="button" aria-label="Đóng">×</button>
+        </div>
+        <label>
+          Tên giải
+          <input id="newTournamentName" type="text" placeholder="Ma Buu Billiards Tournament" required />
+        </label>
+        <label>
+          Ngày thi đấu
+          <input id="newTournamentDate" type="date" />
+        </label>
+        <label>
+          Thể thức
+          <select id="newTournamentFormat">
+            <option value="single">Loại trực tiếp</option>
+            <option value="double">Loại kép</option>
+            <option value="round-robin">Vòng tròn</option>
+          </select>
+        </label>
+        <div class="modal-actions">
+          <button class="secondary-action" id="cancelCreateTournament" type="button">Hủy</button>
+          <button class="primary-action" type="submit">Tạo giải</button>
+        </div>
+      </form>
+    </div>
 
     <script src="https://unpkg.com/ezuikit-js@8.1.14/ezuikit.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
