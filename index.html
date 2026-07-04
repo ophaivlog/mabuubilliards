@@ -2,9 +2,9 @@
 <html lang="vi">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes" />
     <title>Ma Buu Tournament Viewer</title>
-    <link rel="stylesheet" href="styles.css?v=20260524-12" />
+    <link rel="stylesheet" href="styles.css?v=20260524-13" />
   </head>
   <body data-mode="viewer">
     <header class="site-header">
@@ -18,6 +18,7 @@
         <button class="tab" type="button" data-tab="bracket"><span>Sơ đồ đấu</span></button>
         <button class="tab" type="button" data-tab="tournaments"><span>Giải đấu</span></button>
         <button class="tab" type="button" data-tab="ranking"><span>Xếp hạng</span></button>
+        <button class="tab" type="button" data-tab="minigame"><span>Mini game</span></button>
         <button class="tab" type="button" data-tab="contact"><span>Liên hệ</span></button>
       </nav>
 
@@ -89,7 +90,7 @@
               Thể thức
               <select id="tournamentFormat">
                 <option value="single">Loại trực tiếp</option>
-                <option value="double" disabled>Loại kép (sắp có)</option>
+                <option value="double">Sơ đồ 2 mạng đối xứng (16/24/32 cơ thủ)</option>
                 <option value="round-robin" disabled>Vòng tròn (sắp có)</option>
               </select>
             </label>
@@ -229,6 +230,7 @@
           </div>
         </div>
         <div class="bracket-scroll" aria-label="Sơ đồ thi đấu có thể cuộn ngang">
+          <button class="bracket-fit-toggle" data-bracket-fit type="button">Hiện 100%</button>
           <div class="bracket" id="bracketCanvas"></div>
         </div>
       </section>
@@ -323,6 +325,41 @@
         </div>
       </section>
 
+      <section class="panel" id="minigame" hidden>
+        <div class="mini-game-layout">
+          <section class="mini-game-stage" aria-live="polite">
+            <div class="wheel-pointer"></div>
+            <div class="prize-wheel" id="prizeWheel">
+              <div class="wheel-labels" id="wheelLabels"></div>
+              <div class="wheel-hub">QUAY</div>
+            </div>
+            <div class="mini-game-result" id="miniGameResult">Sẵn sàng quay ô trúng thưởng.</div>
+            <button class="primary-action" id="spinPrizeWheel" type="button">Quay thưởng</button>
+          </section>
+
+          <aside class="mini-game-control">
+            <div class="section-heading">
+              <div>
+                <p>MINI GAME</p>
+                <h2>Ô trúng thưởng</h2>
+              </div>
+            </div>
+            <label>
+              Danh sách phần thưởng
+              <textarea id="prizeListInput" rows="9" spellcheck="false"></textarea>
+            </label>
+            <div class="mini-game-actions">
+              <button class="secondary-action" id="savePrizeList" type="button">Lưu danh sách</button>
+              <button class="secondary-action" id="resetPrizeList" type="button">Mẫu mặc định</button>
+            </div>
+            <div class="mini-game-history">
+              <strong>Lịch sử trúng</strong>
+              <div id="prizeHistory">Chưa có lượt quay.</div>
+            </div>
+          </aside>
+        </div>
+      </section>
+
       <section class="panel" id="contact" hidden>
         <div class="contact-section">
           <div class="contact-copy">
@@ -370,6 +407,6 @@
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="supabase-config.js?v=20260524-2"></script>
-    <script src="script.js?v=20260524-12"></script>
+    <script src="script.js?v=20260524-13"></script>
   </body>
 </html>
