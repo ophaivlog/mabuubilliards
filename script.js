@@ -1415,6 +1415,55 @@ function bindBracketFit() {
       scroll.scrollLeft = contentX * nextScale - pointerX;
       scroll.scrollTop = contentY * nextScale - pointerY;
     }, { passive: false });
+
+    let pinchStartDistance = 0;
+    let pinchStartScale = 1;
+    let pinchContentX = 0;
+    let pinchContentY = 0;
+    const touchDistance = (touches) => Math.hypot(touches[0].clientX - touches[1].clientX, touches[0].clientY - touches[1].clientY);
+    const touchCenter = (touches) => ({
+      x: (touches[0].clientX + touches[1].clientX) / 2,
+      y: (touches[0].clientY + touches[1].clientY) / 2,
+    });
+
+    scroll.addEventListener("touchstart", (event) => {
+      if (event.touches.length !== 2) return;
+      const canvas = scroll.querySelector("#bracketCanvas");
+      if (!canvas) return;
+      event.preventDefault();
+      const center = touchCenter(event.touches);
+      const rect = scroll.getBoundingClientRect();
+      const localX = center.x - rect.left;
+      const localY = center.y - rect.top;
+      pinchStartDistance = touchDistance(event.touches);
+      pinchStartScale = Number.parseFloat(canvas.style.zoom) || 1;
+      pinchContentX = (scroll.scrollLeft + localX) / pinchStartScale;
+      pinchContentY = (scroll.scrollTop + localY) / pinchStartScale;
+      bracketFitMode = false;
+    }, { passive: false });
+
+    scroll.addEventListener("touchmove", (event) => {
+      if (event.touches.length !== 2 || !pinchStartDistance) return;
+      event.preventDefault();
+      const canvas = scroll.querySelector("#bracketCanvas");
+      const button = scroll.querySelector("[data-bracket-fit]");
+      if (!canvas) return;
+      const center = touchCenter(event.touches);
+      const rect = scroll.getBoundingClientRect();
+      const localX = center.x - rect.left;
+      const localY = center.y - rect.top;
+      const nextScale = Math.min(2.5, Math.max(0.25, pinchStartScale * touchDistance(event.touches) / pinchStartDistance));
+      bracketManualScale = nextScale;
+      canvas.style.zoom = String(nextScale);
+      scroll.classList.remove("is-fit");
+      scroll.scrollLeft = pinchContentX * nextScale - localX;
+      scroll.scrollTop = pinchContentY * nextScale - localY;
+      if (button) button.textContent = `Thu vừa màn hình • ${Math.round(nextScale * 100)}%`;
+    }, { passive: false });
+
+    scroll.addEventListener("touchend", (event) => {
+      if (event.touches.length < 2) pinchStartDistance = 0;
+    });
   });
   if (typeof ResizeObserver !== "undefined") {
     bracketResizeObserver = new ResizeObserver(() => {

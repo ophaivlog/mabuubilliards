@@ -820,7 +820,8 @@ main {
   margin: 0 auto;
   overflow: auto;
   padding: 58px 0 54px;
-  touch-action: pan-x pan-y pinch-zoom;
+  touch-action: pan-x pan-y;
+  overscroll-behavior: contain;
 }
 
 .bracket-scroll.is-fit {
