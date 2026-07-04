@@ -35,7 +35,8 @@ const defaultPlayers = [
 const state = loadState();
 let selectedTournamentId = "current";
 let selectedTournamentDetailTab = "info";
-let bracketFitMode = true;
+let bracketFitMode = false;
+let bracketManualScale = 1;
 let bracketResizeObserver = null;
 
 function createDefaultState() {
@@ -1369,8 +1370,9 @@ function applyBracketScale() {
   if (!canvas || !scroll) return;
   canvas.style.zoom = "1";
   if (!bracketFitMode) {
+    canvas.style.zoom = String(bracketManualScale);
     scroll.classList.remove("is-fit");
-    if (button) button.textContent = "Thu vừa màn hình";
+    if (button) button.textContent = `Thu vừa màn hình • ${Math.round(bracketManualScale * 100)}%`;
     return;
   }
   const availableWidth = scroll.clientWidth - 8;
@@ -1385,9 +1387,34 @@ function applyBracketScale() {
 function bindBracketFit() {
   document.querySelectorAll("[data-bracket-fit]").forEach((button) => {
     button.addEventListener("click", () => {
-      bracketFitMode = !bracketFitMode;
+      if (bracketFitMode) {
+        bracketFitMode = false;
+        bracketManualScale = 1;
+      } else {
+        bracketFitMode = true;
+      }
       applyBracketScale();
     });
+  });
+  document.querySelectorAll(".bracket-scroll").forEach((scroll) => {
+    scroll.addEventListener("wheel", (event) => {
+      const canvas = scroll.querySelector("#bracketCanvas");
+      if (!canvas) return;
+      event.preventDefault();
+      const oldScale = Number.parseFloat(canvas.style.zoom) || 1;
+      const direction = event.deltaY < 0 ? 1 : -1;
+      const nextScale = Math.min(2.5, Math.max(0.25, oldScale + direction * 0.1));
+      const rect = scroll.getBoundingClientRect();
+      const pointerX = event.clientX - rect.left;
+      const pointerY = event.clientY - rect.top;
+      const contentX = (scroll.scrollLeft + pointerX) / oldScale;
+      const contentY = (scroll.scrollTop + pointerY) / oldScale;
+      bracketFitMode = false;
+      bracketManualScale = nextScale;
+      applyBracketScale();
+      scroll.scrollLeft = contentX * nextScale - pointerX;
+      scroll.scrollTop = contentY * nextScale - pointerY;
+    }, { passive: false });
   });
   if (typeof ResizeObserver !== "undefined") {
     bracketResizeObserver = new ResizeObserver(() => {
