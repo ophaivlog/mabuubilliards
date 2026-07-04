@@ -2,7 +2,7 @@
 <html lang="vi">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.25, maximum-scale=5.0, user-scalable=yes" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>Ma Buu Tournament Admin</title>
     <link rel="stylesheet" href="styles.css?v=20260524-13" />
   </head>
@@ -136,6 +136,21 @@
               <input id="playerName" type="text" placeholder="Nhập tên cơ thủ" autocomplete="off" />
             </label>
             <label>
+              Hạng
+              <select id="playerRank">
+                <option value="K">K</option>
+                <option value="I">I</option>
+                <option value="H">H</option>
+                <option value="G">G</option>
+                <option value="F">F</option>
+                <option value="E">E</option>
+                <option value="D">D</option>
+                <option value="C">C</option>
+                <option value="B">B</option>
+                <option value="A">A</option>
+              </select>
+            </label>
+            <label>
               Ghi chú / CLB
               <input id="playerNote" type="text" placeholder="Tuỳ chọn" autocomplete="off" />
             </label>
@@ -203,6 +218,7 @@
               <p>XẾP HẠNG</p>
               <h2>Bảng thành tích</h2>
             </div>
+            <button class="danger-action" id="clearRankingData" type="button">Xóa dữ liệu xếp hạng</button>
           </div>
           <div class="table-wrap">
             <table class="data-table">

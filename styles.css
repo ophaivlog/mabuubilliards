@@ -817,11 +817,25 @@ main {
 .bracket-scroll {
   position: relative;
   width: min(1160px, calc(100% - 32px));
+  height: min(820px, calc(100vh - 190px));
+  min-height: 520px;
   margin: 0 auto;
   overflow: auto;
   padding: 58px 0 54px;
-  touch-action: pan-x pan-y;
+  touch-action: none;
   overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  cursor: grab;
+  contain: layout paint;
+}
+
+.bracket-scroll.is-dragging {
+  cursor: grabbing;
+  user-select: none;
+}
+
+.bracket-scroll.is-dragging .match {
+  cursor: grabbing;
 }
 
 .bracket-scroll.is-fit {
@@ -1223,13 +1237,51 @@ main {
   font-size: clamp(16px, 2vw, 24px);
 }
 
-.live-score-player span {
+.live-score-player span,
+.live-score-input {
   min-width: 52px;
   color: var(--teal);
   font-size: clamp(24px, 4vw, 46px);
   font-weight: 950;
   line-height: 1;
   text-align: center;
+}
+
+.live-score-input {
+  width: 82px;
+  height: 54px;
+  justify-self: end;
+  border: 1px solid rgba(72, 214, 198, 0.5);
+  border-radius: 7px;
+  background: rgba(72, 214, 198, 0.08);
+  outline: none;
+}
+
+.live-score-input:focus {
+  border-color: var(--teal);
+  box-shadow: 0 0 0 3px rgba(72, 214, 198, 0.14);
+}
+
+.live-status-select {
+  min-width: 118px;
+  height: 38px;
+  padding: 0 30px 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.live-status-select.status-live {
+  border-color: rgba(72, 214, 198, 0.62);
+  color: var(--teal);
+}
+
+.live-status-select.status-done {
+  border-color: rgba(240, 91, 191, 0.62);
+  color: var(--pink-2);
 }
 
 .live-score-divider {
@@ -2443,6 +2495,11 @@ code {
   .tournament-title {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .bracket-scroll {
+    height: 68vh;
+    min-height: 380px;
   }
 
   .camera-header {

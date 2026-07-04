@@ -48,6 +48,7 @@ function createDefaultState() {
     },
     players: [],
     playerStats: [],
+    rankingIgnoredResults: [],
     registrationRequests: [],
     tournamentHistory: [],
     rounds: [],
@@ -74,6 +75,9 @@ function normalizeStateShape(target) {
 
   if (!Array.isArray(target.playerStats)) {
     target.playerStats = [];
+  }
+  if (!Array.isArray(target.rankingIgnoredResults)) {
+    target.rankingIgnoredResults = [];
   }
 
   if (!Array.isArray(target.registrationRequests)) {
@@ -210,6 +214,7 @@ function applyRemoteState(remoteState) {
   state.tournament = remoteState.tournament || createDefaultState().tournament;
   state.players = Array.isArray(remoteState.players) ? remoteState.players : [];
   state.playerStats = Array.isArray(remoteState.playerStats) ? remoteState.playerStats : state.playerStats || [];
+  state.rankingIgnoredResults = Array.isArray(remoteState.rankingIgnoredResults) ? remoteState.rankingIgnoredResults : state.rankingIgnoredResults || [];
   state.tournamentHistory = Array.isArray(remoteState.tournamentHistory) ? remoteState.tournamentHistory : [];
   state.rounds = Array.isArray(remoteState.rounds) ? remoteState.rounds : [];
   cacheState();
@@ -272,6 +277,7 @@ async function saveCloudState() {
         tournament: state.tournament,
         players: state.players,
         playerStats: state.playerStats,
+        rankingIgnoredResults: state.rankingIgnoredResults,
         tournamentHistory: state.tournamentHistory,
         rounds: state.rounds,
       },
@@ -504,6 +510,12 @@ function escapeHtml(value) {
     .replace(/'/g, "&#039;");
 }
 
+function formatRankedPlayerName(name, rank) {
+  const cleanName = String(name || "").trim().replace(/\s+\([KIHGFEDCBA]\)$/i, "");
+  const cleanRank = String(rank || "").trim().toUpperCase();
+  return cleanRank ? `${cleanName} (${cleanRank})` : cleanName;
+}
+
 function ensureTournamentLiveWindow() {
   let modal = document.querySelector("#tournamentLiveWindow");
 
@@ -594,12 +606,15 @@ function getMatchLiveInfo(matchCard) {
     label: matchCard.dataset.matchLabel || "",
     table: matchCard.dataset.openMatchCamera,
     status: matchStatusLabel(matchCard.dataset.matchStatus),
+    statusValue: matchCard.dataset.matchStatus || "pending",
     playerA: players[0]?.name || "TBD",
     scoreA: players[0]?.score || "-",
     playerB: players[1]?.name || "TBD",
     scoreB: players[1]?.score || "-",
     winnerA: !!players[0]?.winner,
     winnerB: !!players[1]?.winner,
+    roundIndex: Number(matchCard.dataset.round),
+    matchIndex: Number(matchCard.dataset.match),
   };
 }
 
@@ -618,22 +633,53 @@ function renderTournamentLiveScore(modal, matchInfo = {}) {
   const score = modal.querySelector("#tournamentLiveScore");
   const playerA = escapeHtml(matchInfo.playerA || "TBD");
   const playerB = escapeHtml(matchInfo.playerB || "TBD");
-  const scoreA = escapeHtml(matchInfo.scoreA || "-");
-  const scoreB = escapeHtml(matchInfo.scoreB || "-");
-  const status = escapeHtml(matchInfo.status || "Dang thi dau");
+  const scoreA = escapeHtml(matchInfo.scoreA === "-" ? "" : (matchInfo.scoreA || ""));
+  const scoreB = escapeHtml(matchInfo.scoreB === "-" ? "" : (matchInfo.scoreB || ""));
+  const status = escapeHtml(matchInfo.status || "Đang thi đấu");
+  const statusValue = matchInfo.statusValue || "live";
 
   score.innerHTML = `
     <div class="live-score-player${matchInfo.winnerA ? " winner" : ""}">
       <strong>${playerA}</strong>
-      <span>${scoreA}</span>
+      ${isAdmin && Number.isInteger(matchInfo.roundIndex) && Number.isInteger(matchInfo.matchIndex)
+        ? `<input class="live-score-input" data-live-score="scoreA" value="${scoreA}" inputmode="numeric" aria-label="Điểm ${playerA}" />`
+        : `<span>${scoreA || "-"}</span>`}
     </div>
     <div class="live-score-divider">vs</div>
     <div class="live-score-player${matchInfo.winnerB ? " winner" : ""}">
       <strong>${playerB}</strong>
-      <span>${scoreB}</span>
+      ${isAdmin && Number.isInteger(matchInfo.roundIndex) && Number.isInteger(matchInfo.matchIndex)
+        ? `<input class="live-score-input" data-live-score="scoreB" value="${scoreB}" inputmode="numeric" aria-label="Điểm ${playerB}" />`
+        : `<span>${scoreB || "-"}</span>`}
     </div>
-    <small>${status}</small>
+    ${isAdmin && Number.isInteger(matchInfo.roundIndex) && Number.isInteger(matchInfo.matchIndex)
+      ? `<select class="live-status-select status-${escapeHtml(statusValue)}" data-live-status aria-label="Trạng thái trận đấu">
+          <option value="pending"${statusValue !== "live" && statusValue !== "done" ? " selected" : ""}>Chưa đấu</option>
+          <option value="live"${statusValue === "live" ? " selected" : ""}>Đang đấu</option>
+          <option value="done"${statusValue === "done" ? " selected" : ""}>Kết thúc</option>
+        </select>`
+      : `<small>${status}</small>`}
   `;
+  score.querySelectorAll("[data-live-score]").forEach((input) => {
+    input.addEventListener("change", () => {
+      updateMatchScore(matchInfo.roundIndex, matchInfo.matchIndex, input.dataset.liveScore, input.value.trim());
+    });
+  });
+  score.querySelector("[data-live-status]")?.addEventListener("change", (event) => {
+    updateMatchStatus(matchInfo.roundIndex, matchInfo.matchIndex, event.target.value);
+    const current = state.rounds[matchInfo.roundIndex]?.matches[matchInfo.matchIndex];
+    if (current) {
+      renderTournamentLiveScore(modal, {
+        ...matchInfo,
+        scoreA: current.scoreA,
+        scoreB: current.scoreB,
+        status: matchStatusLabel(current.status),
+        statusValue: current.status,
+        winnerA: current.winner === current.playerA,
+        winnerB: current.winner === current.playerB,
+      });
+    }
+  });
 }
 
 async function openTournamentLiveWindow(table, matchInfo = "") {
@@ -1420,6 +1466,17 @@ function bindBracketFit() {
     let pinchStartScale = 1;
     let pinchContentX = 0;
     let pinchContentY = 0;
+    let panStartX = 0;
+    let panStartY = 0;
+    let panScrollLeft = 0;
+    let panScrollTop = 0;
+    let isTouchPanning = false;
+    let isMousePanning = false;
+    let mouseDidDrag = false;
+    let mouseStartX = 0;
+    let mouseStartY = 0;
+    let mouseScrollLeft = 0;
+    let mouseScrollTop = 0;
     const touchDistance = (touches) => Math.hypot(touches[0].clientX - touches[1].clientX, touches[0].clientY - touches[1].clientY);
     const touchCenter = (touches) => ({
       x: (touches[0].clientX + touches[1].clientX) / 2,
@@ -1427,6 +1484,14 @@ function bindBracketFit() {
     });
 
     scroll.addEventListener("touchstart", (event) => {
+      if (event.touches.length === 1) {
+        panStartX = event.touches[0].clientX;
+        panStartY = event.touches[0].clientY;
+        panScrollLeft = scroll.scrollLeft;
+        panScrollTop = scroll.scrollTop;
+        isTouchPanning = false;
+        return;
+      }
       if (event.touches.length !== 2) return;
       const canvas = scroll.querySelector("#bracketCanvas");
       if (!canvas) return;
@@ -1443,6 +1508,16 @@ function bindBracketFit() {
     }, { passive: false });
 
     scroll.addEventListener("touchmove", (event) => {
+      if (event.touches.length === 1) {
+        const deltaX = event.touches[0].clientX - panStartX;
+        const deltaY = event.touches[0].clientY - panStartY;
+        if (!isTouchPanning && Math.hypot(deltaX, deltaY) < 6) return;
+        isTouchPanning = true;
+        event.preventDefault();
+        scroll.scrollLeft = panScrollLeft - deltaX;
+        scroll.scrollTop = panScrollTop - deltaY;
+        return;
+      }
       if (event.touches.length !== 2 || !pinchStartDistance) return;
       event.preventDefault();
       const canvas = scroll.querySelector("#bracketCanvas");
@@ -1463,6 +1538,39 @@ function bindBracketFit() {
 
     scroll.addEventListener("touchend", (event) => {
       if (event.touches.length < 2) pinchStartDistance = 0;
+      if (!event.touches.length) isTouchPanning = false;
+    });
+
+    scroll.addEventListener("mousedown", (event) => {
+      if (event.button !== 0 || event.target.closest("input, button, select, textarea, a")) return;
+      isMousePanning = true;
+      mouseDidDrag = false;
+      mouseStartX = event.clientX;
+      mouseStartY = event.clientY;
+      mouseScrollLeft = scroll.scrollLeft;
+      mouseScrollTop = scroll.scrollTop;
+      scroll.classList.add("is-dragging");
+    });
+
+    document.addEventListener("mousemove", (event) => {
+      if (!isMousePanning) return;
+      const deltaX = event.clientX - mouseStartX;
+      const deltaY = event.clientY - mouseStartY;
+      if (!mouseDidDrag && Math.hypot(deltaX, deltaY) < 5) return;
+      mouseDidDrag = true;
+      event.preventDefault();
+      scroll.dataset.didDrag = "true";
+      scroll.scrollLeft = mouseScrollLeft - deltaX;
+      scroll.scrollTop = mouseScrollTop - deltaY;
+    });
+
+    document.addEventListener("mouseup", () => {
+      if (!isMousePanning) return;
+      isMousePanning = false;
+      scroll.classList.remove("is-dragging");
+      setTimeout(() => {
+        delete scroll.dataset.didDrag;
+      }, 0);
     });
   });
   if (typeof ResizeObserver !== "undefined") {
@@ -1565,6 +1673,8 @@ function renderBracket() {
       el.dataset.matchLabel = `Tran ${match.matchIndex + 1}`;
       el.dataset.matchLive = isLiveMatch ? "true" : "false";
       el.dataset.matchStatus = match.status || "pending";
+      el.dataset.round = roundIndex;
+      el.dataset.match = matchIndex;
       el.style.left = `${pos.x}px`;
       el.style.top = `${pos.y}px`;
       el.innerHTML = `
@@ -1609,6 +1719,7 @@ function renderBracket() {
 
   canvas.querySelectorAll(".match[data-open-match-camera]").forEach((matchCard) => {
     matchCard.addEventListener("click", (event) => {
+      if (matchCard.closest(".bracket-scroll")?.dataset.didDrag === "true") return;
       if (event.target.closest("input, button, select, textarea")) {
         return;
       }
@@ -1960,6 +2071,12 @@ function renderDetailRegistration(entry) {
           <input name="name" type="text" placeholder="Nhập họ tên" autocomplete="name" required />
         </label>
         <label>
+          Hạng
+          <select name="rank" required>
+            <option>K</option><option>I</option><option>H</option><option>G</option><option>F</option><option>E</option><option>D</option><option>C</option><option>B</option><option>A</option>
+          </select>
+        </label>
+        <label>
           Số điện thoại
           <input name="phone" type="tel" placeholder="Số liên hệ" autocomplete="tel" required />
         </label>
@@ -2008,6 +2125,12 @@ function renderDetailPlayersAdmin(entry) {
         <label>
           Tên cơ thủ
           <input name="name" type="text" placeholder="Nhập tên cơ thủ" autocomplete="off" required />
+        </label>
+        <label>
+          Hạng
+          <select name="rank" required>
+            <option>K</option><option>I</option><option>H</option><option>G</option><option>F</option><option>E</option><option>D</option><option>C</option><option>B</option><option>A</option>
+          </select>
         </label>
         <label>
           Ghi chú / CLB
@@ -2145,7 +2268,7 @@ function renderDetailBracket(entry) {
         rounds.length
           ? rounds
               .map(
-                (round) => `
+                (round, roundIndex) => `
                   <section class="bracket-stage">
                     <h4>${escapeHtml(round.title)}</h4>
                     ${(round.matches || [])
@@ -2159,12 +2282,15 @@ function renderDetailBracket(entry) {
                             <span class="sr-only" data-live-match-info
                               data-label="Trận ${match.matchIndex + 1}"
                               data-status="${matchStatusLabel(match.status)}"
+                              data-status-value="${escapeHtml(match.status || "pending")}"
                               data-player-a="${escapeHtml(match.playerA || "TBD")}"
                               data-score-a="${escapeHtml(match.scoreA || "-")}"
                               data-player-b="${escapeHtml(match.playerB || "TBD")}"
                               data-score-b="${escapeHtml(match.scoreB || "-")}"
                               data-winner-a="${aWon ? "true" : "false"}"
-                              data-winner-b="${bWon ? "true" : "false"}"></span>
+                              data-winner-b="${bWon ? "true" : "false"}"
+                              data-round-index="${roundIndex}"
+                              data-match-index="${match.matchIndex}"></span>
                             <div class="mini-match-meta">
                               <span>Trận ${match.matchIndex + 1}</span>
                               <small>Bàn ${String(match.table || match.matchIndex + 1).padStart(2, "0")}</small>
@@ -2305,12 +2431,15 @@ function renderTournamentDirectory() {
       const matchInfo = liveInfo ? {
         label: liveInfo.dataset.label || "",
         status: liveInfo.dataset.status || "",
+        statusValue: liveInfo.dataset.statusValue || "pending",
         playerA: liveInfo.dataset.playerA || "TBD",
         scoreA: liveInfo.dataset.scoreA || "-",
         playerB: liveInfo.dataset.playerB || "TBD",
         scoreB: liveInfo.dataset.scoreB || "-",
         winnerA: liveInfo.dataset.winnerA === "true",
         winnerB: liveInfo.dataset.winnerB === "true",
+        roundIndex: Number(liveInfo.dataset.roundIndex),
+        matchIndex: Number(liveInfo.dataset.matchIndex),
       } : { label: button.querySelector(".mini-match-meta span")?.textContent.trim() || "" };
       if (!canOpenMatchLive(matchInfo)) {
         return;
@@ -2406,9 +2535,10 @@ function deleteSelectedTournament() {
 function submitDirectoryPlayerForm(event) {
   event.preventDefault();
   const form = event.currentTarget;
-  const name = form.elements.name.value.trim();
+  const rawName = form.elements.name.value.trim();
+  const name = formatRankedPlayerName(rawName, form.elements.rank.value);
 
-  if (!name) {
+  if (!rawName) {
     form.elements.name.focus();
     return;
   }
@@ -2428,11 +2558,12 @@ async function submitDirectoryRegistrationRequest(event) {
   event.preventDefault();
   const form = event.currentTarget;
   const status = form.querySelector("#directoryRegistrationStatus");
-  const name = form.elements.name.value.trim();
+  const rawName = form.elements.name.value.trim();
+  const name = formatRankedPlayerName(rawName, form.elements.rank.value);
   const phone = form.elements.phone.value.trim();
   const note = form.elements.note.value.trim();
 
-  if (!name || !phone) {
+  if (!rawName || !phone) {
     status.textContent = "Vui lòng nhập tên và số điện thoại.";
     status.dataset.type = "error";
     return;
@@ -2808,16 +2939,19 @@ function mergeRankingRecord(rows, record) {
 function tournamentRankingRecords(entry) {
   const rows = new Map();
   const tournamentId = entry.id || `deleted-${Date.now()}`;
-  (entry.players || []).forEach((player) => addRankingPlayer(rows, player.name, tournamentId));
-  matchesFromRounds(entry.rounds)
-    .filter((match) => match.playerA || match.playerB)
-    .forEach((match) => {
-      addRankingPlayer(rows, match.playerA, tournamentId);
-      addRankingPlayer(rows, match.playerB, tournamentId);
-    });
+  const ignoredResults = new Set(state.rankingIgnoredResults || []);
+  if (!ignoredResults.size) {
+    (entry.players || []).forEach((player) => addRankingPlayer(rows, player.name, tournamentId));
+    matchesFromRounds(entry.rounds)
+      .filter((match) => match.playerA || match.playerB)
+      .forEach((match) => {
+        addRankingPlayer(rows, match.playerA, tournamentId);
+        addRankingPlayer(rows, match.playerB, tournamentId);
+      });
+  }
 
   matchesFromRounds(entry.rounds)
-    .filter((match) => match.status === "done" && match.playerA && match.playerB)
+    .filter((match) => match.status === "done" && match.playerA && match.playerB && !ignoredResults.has(rankingResultKey(tournamentId, match)))
     .forEach((match) => {
       const a = addRankingPlayer(rows, match.playerA, tournamentId);
       const b = addRankingPlayer(rows, match.playerB, tournamentId);
@@ -2864,6 +2998,10 @@ function archiveTournamentPlayerStats(entry) {
   }));
 }
 
+function rankingResultKey(entryId, match) {
+  return `${entryId}:${match.id || `${match.roundIndex}-${match.matchIndex}`}:${match.playerA || ""}:${match.playerB || ""}:${match.scoreA || ""}:${match.scoreB || ""}`;
+}
+
 function collectRankingRows() {
   const rows = new Map();
   const entries = [
@@ -2878,10 +3016,11 @@ function collectRankingRows() {
       rounds: entry.rounds || [],
     })),
   ];
+  const ignoredResults = new Set(state.rankingIgnoredResults || []);
 
   (state.playerStats || []).forEach((record) => mergeRankingRecord(rows, record));
 
-  entries.forEach((entry) => {
+  if (!ignoredResults.size) entries.forEach((entry) => {
     (entry.players || []).forEach((player) => addRankingPlayer(rows, player.name, entry.id));
     matchesFromRounds(entry.rounds)
       .filter((match) => match.playerA || match.playerB)
@@ -2893,7 +3032,7 @@ function collectRankingRows() {
 
   entries.forEach((entry) => {
     matchesFromRounds(entry.rounds)
-      .filter((match) => match.status === "done" && match.playerA && match.playerB)
+      .filter((match) => match.status === "done" && match.playerA && match.playerB && !ignoredResults.has(rankingResultKey(entry.id, match)))
       .forEach((match) => {
         const a = addRankingPlayer(rows, match.playerA, entry.id);
         const b = addRankingPlayer(rows, match.playerB, entry.id);
@@ -3115,12 +3254,14 @@ function createNewTournamentFromModal(event) {
 
 async function submitRegistrationRequest(form) {
   const nameInput = form.querySelector("#registrationName");
+  const rankInput = form.querySelector("#registrationRank");
   const phoneInput = form.querySelector("#registrationPhone");
   const noteInput = form.querySelector("#registrationNote");
-  const name = nameInput.value.trim();
+  const rawName = nameInput.value.trim();
+  const name = formatRankedPlayerName(rawName, rankInput?.value || "K");
   const phone = phoneInput.value.trim();
 
-  if (!name || !phone) {
+  if (!rawName || !phone) {
     setRegistrationStatus("Vui lòng nhập tên và số điện thoại.", "error");
     return;
   }
@@ -3232,9 +3373,11 @@ function bindTournamentManager() {
   document.querySelector("#playerForm")?.addEventListener("submit", (event) => {
     event.preventDefault();
     const nameInput = document.querySelector("#playerName");
+    const rankInput = document.querySelector("#playerRank");
     const noteInput = document.querySelector("#playerNote");
-    const name = nameInput.value.trim();
-    if (!name) {
+    const rawName = nameInput.value.trim();
+    const name = formatRankedPlayerName(rawName, rankInput?.value || "K");
+    if (!rawName) {
       setAdminNotice("Nhập tên cơ thủ trước khi bấm thêm.", "error");
       nameInput.focus();
       return;
@@ -3247,6 +3390,7 @@ function bindTournamentManager() {
     });
     state.rounds = [];
     nameInput.value = "";
+    if (rankInput) rankInput.value = "K";
     noteInput.value = "";
     saveState();
     renderAll();
@@ -3303,6 +3447,23 @@ function bindTournamentManager() {
     else autoAdvanceByes();
     saveState();
     renderAll();
+  });
+
+  document.querySelector("#clearRankingData")?.addEventListener("click", () => {
+    if (!confirm("Xóa toàn bộ dữ liệu bảng xếp hạng đã tích lũy? Giải đấu và sơ đồ hiện tại vẫn được giữ nguyên.")) return;
+    const entries = [
+      { id: "current", rounds: state.rounds },
+      ...state.tournamentHistory.map((entry) => ({ id: entry.id, rounds: entry.rounds || [] })),
+    ];
+    state.playerStats = [];
+    state.rankingIgnoredResults = [...new Set(entries.flatMap((entry) =>
+      matchesFromRounds(entry.rounds)
+        .filter((match) => match.status === "done" && match.playerA && match.playerB)
+        .map((match) => rankingResultKey(entry.id, match)),
+    ))];
+    saveState();
+    renderAll();
+    setAdminNotice("Đã xóa toàn bộ dữ liệu bảng xếp hạng.", "ok");
   });
 
   document.querySelector("#archiveTournament")?.addEventListener("click", saveTournamentToHistory);
