@@ -218,7 +218,9 @@
               <p>XẾP HẠNG</p>
               <h2>Bảng thành tích</h2>
             </div>
-            <button class="danger-action" id="clearRankingData" type="button">Xóa dữ liệu xếp hạng</button>
+            <div class="request-actions">
+              <button class="danger-action" id="clearRankingData" type="button">Xóa toàn bộ xếp hạng</button>
+            </div>
           </div>
           <div class="table-wrap">
             <table class="data-table">
@@ -245,6 +247,7 @@
             <h2 id="bracketTitle">MA BUU BILLIARDS TOURNAMENT</h2>
           </div>
           <div class="bracket-tools">
+            <button class="secondary-action" id="openManualPairing" type="button">Xếp cặp thủ công</button>
             <button class="secondary-action" id="resetScores" type="button">Xoá điểm</button>
             <button class="primary-action" id="saveBracket" type="button">Lưu bracket</button>
           </div>
@@ -452,6 +455,42 @@
         <div class="modal-actions">
           <button class="secondary-action" id="cancelCreateTournament" type="button">Hủy</button>
           <button class="primary-action" type="submit">Tạo giải</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="modal-backdrop" id="manualPairingModal" hidden>
+      <form class="modal-card manual-pairing-card" id="manualPairingForm">
+        <div class="modal-heading">
+          <div>
+            <p>VÒNG ĐẦU</p>
+            <h2>Xếp cặp thủ công</h2>
+          </div>
+          <button class="icon-action" id="closeManualPairing" type="button" aria-label="Đóng">×</button>
+        </div>
+        <div class="manual-pairing-list" id="manualPairingList"></div>
+        <div class="form-status" id="manualPairingStatus">Mỗi cơ thủ chỉ được chọn một lần.</div>
+        <div class="modal-actions">
+          <button class="secondary-action" id="cancelManualPairing" type="button">Hủy</button>
+          <button class="primary-action" type="submit">Tạo bracket</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="modal-backdrop" id="matchPairEditorModal" hidden>
+      <form class="modal-card" id="matchPairEditorForm">
+        <div class="modal-heading">
+          <div><p>CHỈNH CẶP ĐẤU</p><h2 id="matchPairEditorTitle">Trận đấu</h2></div>
+          <button class="icon-action" id="closeMatchPairEditor" type="button" aria-label="Đóng">×</button>
+        </div>
+        <input id="matchPairRound" type="hidden" />
+        <input id="matchPairMatch" type="hidden" />
+        <label>Cơ thủ A<select id="matchPairPlayerA"></select></label>
+        <label>Cơ thủ B<select id="matchPairPlayerB"></select></label>
+        <div class="form-status" id="matchPairEditorStatus">Chọn hai cơ thủ cho trận này.</div>
+        <div class="modal-actions">
+          <button class="secondary-action" id="cancelMatchPairEditor" type="button">Hủy</button>
+          <button class="primary-action" type="submit">Lưu cặp đấu</button>
         </div>
       </form>
     </div>

@@ -49,6 +49,7 @@ function createDefaultState() {
     players: [],
     playerStats: [],
     rankingIgnoredResults: [],
+    rankingExcludedPlayers: [],
     registrationRequests: [],
     tournamentHistory: [],
     rounds: [],
@@ -78,6 +79,9 @@ function normalizeStateShape(target) {
   }
   if (!Array.isArray(target.rankingIgnoredResults)) {
     target.rankingIgnoredResults = [];
+  }
+  if (!Array.isArray(target.rankingExcludedPlayers)) {
+    target.rankingExcludedPlayers = [];
   }
 
   if (!Array.isArray(target.registrationRequests)) {
@@ -255,6 +259,7 @@ function applyRemoteState(remoteState) {
   state.players = Array.isArray(remoteState.players) ? remoteState.players : [];
   state.playerStats = Array.isArray(remoteState.playerStats) ? remoteState.playerStats : state.playerStats || [];
   state.rankingIgnoredResults = Array.isArray(remoteState.rankingIgnoredResults) ? remoteState.rankingIgnoredResults : state.rankingIgnoredResults || [];
+  state.rankingExcludedPlayers = Array.isArray(remoteState.rankingExcludedPlayers) ? remoteState.rankingExcludedPlayers : state.rankingExcludedPlayers || [];
   state.tournamentHistory = Array.isArray(remoteState.tournamentHistory) ? remoteState.tournamentHistory : [];
   state.rounds = Array.isArray(remoteState.rounds) ? remoteState.rounds : [];
   normalizeStateShape(state);
@@ -319,6 +324,7 @@ async function saveCloudState() {
         players: state.players,
         playerStats: state.playerStats,
         rankingIgnoredResults: state.rankingIgnoredResults,
+        rankingExcludedPlayers: state.rankingExcludedPlayers,
         tournamentHistory: state.tournamentHistory,
         rounds: state.rounds,
       },
@@ -1095,8 +1101,8 @@ function recalculateDoubleBracket() {
 
   for (let pass = 0; pass < state.rounds.length + 3; pass += 1) {
     state.rounds.forEach((round) => round.matches.forEach((match) => {
-      match.playerA = match.seedA || null;
-      match.playerB = match.seedB || null;
+      match.playerA = Object.prototype.hasOwnProperty.call(match, "manualPlayerA") ? match.manualPlayerA : (match.seedA || null);
+      match.playerB = Object.prototype.hasOwnProperty.call(match, "manualPlayerB") ? match.manualPlayerB : (match.seedB || null);
       match.winner = null;
       match.status = match.playerA || match.playerB ? "waiting" : "waiting";
       match.scoreA = "";
@@ -1131,7 +1137,11 @@ function recalculateDoubleBracket() {
       match.winner = winner;
       match.status = "done";
       [ [match.nextWin, winner], [match.nextLoss, loser] ].forEach(([route, player]) => {
-        if (route && player) state.rounds[route.round].matches[route.match][route.slot] = player;
+        if (route && player) {
+          const targetMatch = state.rounds[route.round].matches[route.match];
+          const manualField = route.slot === "playerA" ? "manualPlayerA" : "manualPlayerB";
+          if (!Object.prototype.hasOwnProperty.call(targetMatch, manualField)) targetMatch[route.slot] = player;
+        }
       });
       if (match.id === "gf1" && winner === match.playerB) {
         const reset = state.rounds[match.roundIndex].matches[1];
@@ -1241,6 +1251,24 @@ function clearDownstream(roundIndex, matchIndex) {
 
 function isRoutedBracketMatch(match) {
   return ["winner", "loser", "final", "diagram-winner", "diagram-loser", "diagram-grand"].includes(match?.bracketGroup);
+}
+
+function updateMatchPlayers(roundIndex, matchIndex, playerA, playerB) {
+  if (!isAdmin) return;
+  const match = state.rounds[roundIndex]?.matches[matchIndex];
+  if (!match || (playerA && playerB && playerA === playerB)) return;
+  if (playerA) match.manualPlayerA = playerA;
+  else delete match.manualPlayerA;
+  if (playerB) match.manualPlayerB = playerB;
+  else delete match.manualPlayerB;
+  match.scoreA = "";
+  match.scoreB = "";
+  match.winner = null;
+  match.status = playerA && playerB ? "pending" : "waiting";
+  if (isRoutedBracketMatch(match)) recalculateDoubleBracket();
+  else clearDownstream(roundIndex, matchIndex);
+  saveState();
+  renderAll();
 }
 
 function updateMatchScore(roundIndex, matchIndex, field, value) {
@@ -1777,6 +1805,10 @@ function renderBracket() {
     matchCard.addEventListener("click", (event) => {
       if (matchCard.closest(".bracket-scroll")?.dataset.didDrag === "true") return;
       if (event.target.closest("input, button, select, textarea")) {
+        return;
+      }
+      if (isAdmin) {
+        openMatchPairEditor(Number(matchCard.dataset.round), Number(matchCard.dataset.match));
         return;
       }
       const matchInfo = getMatchLiveInfo(matchCard);
@@ -3060,6 +3092,7 @@ function rankingResultKey(entryId, match) {
 
 function collectRankingRows() {
   const rows = new Map();
+  const excludedPlayers = new Set((state.rankingExcludedPlayers || []).map(normalizePlayerKey));
   const entries = [
     {
       id: "current",
@@ -3110,11 +3143,13 @@ function collectRankingRows() {
       });
   });
 
-  return [...rows.values()].map((row) => ({
-    ...row,
-    tournamentCount: row.tournaments.size,
-    winRate: row.played ? Math.round((row.won / row.played) * 100) : 0,
-  }));
+  return [...rows.values()]
+    .filter((row) => !excludedPlayers.has(normalizePlayerKey(row.name)))
+    .map((row) => ({
+      ...row,
+      tournamentCount: row.tournaments.size,
+      winRate: row.played ? Math.round((row.won / row.played) * 100) : 0,
+    }));
 }
 
 function renderSchedule() {
@@ -3274,6 +3309,123 @@ function closeCreateTournamentModal() {
   }
 }
 
+function closeManualPairingModal() {
+  const modal = document.querySelector("#manualPairingModal");
+  if (modal) modal.hidden = true;
+}
+
+function openManualPairingModal() {
+  if (state.players.length < 2 || state.players.length % 2 !== 0) {
+    alert("Cần số lượng cơ thủ chẵn để xếp cặp thủ công.");
+    return;
+  }
+  if (state.tournament.format === "double" && ![16, 24, 32].includes(state.players.length)) {
+    alert("Thể thức 2 mạng hỗ trợ 16, 24 hoặc 32 cơ thủ.");
+    return;
+  }
+  const modal = document.querySelector("#manualPairingModal");
+  const list = document.querySelector("#manualPairingList");
+  const status = document.querySelector("#manualPairingStatus");
+  if (!modal || !list) return;
+  const options = (selectedId) => state.players.map((player) =>
+    `<option value="${escapeHtml(player.id)}"${player.id === selectedId ? " selected" : ""}>${escapeHtml(player.name)}</option>`,
+  ).join("");
+  list.innerHTML = Array.from({ length: state.players.length / 2 }, (_, matchIndex) => {
+    const playerA = state.players[matchIndex * 2];
+    const playerB = state.players[matchIndex * 2 + 1];
+    return `<div class="manual-pairing-row">
+      <strong>Trận ${matchIndex + 1}</strong>
+      <select data-manual-slot>${options(playerA.id)}</select>
+      <span>VS</span>
+      <select data-manual-slot>${options(playerB.id)}</select>
+    </div>`;
+  }).join("");
+  const pairingSelects = [...list.querySelectorAll("[data-manual-slot]")];
+  pairingSelects.forEach((select) => {
+    select.dataset.previousValue = select.value;
+    select.addEventListener("change", () => {
+      const previousValue = select.dataset.previousValue;
+      const duplicateSelect = pairingSelects.find((other) => other !== select && other.value === select.value);
+      if (duplicateSelect) {
+        duplicateSelect.value = previousValue;
+        duplicateSelect.dataset.previousValue = previousValue;
+      }
+      select.dataset.previousValue = select.value;
+      if (status) {
+        status.textContent = duplicateSelect ? "Đã hoán đổi vị trí hai cơ thủ." : "Đã cập nhật cặp đấu.";
+        status.dataset.type = "ok";
+      }
+    });
+  });
+  if (status) {
+    status.textContent = "Chọn một cơ thủ đã có trong cặp khác để tự động hoán đổi vị trí.";
+    status.dataset.type = "";
+  }
+  modal.hidden = false;
+}
+
+function submitManualPairing(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const status = form.querySelector("#manualPairingStatus");
+  const selectedIds = [...form.querySelectorAll("[data-manual-slot]")].map((select) => select.value);
+  if (new Set(selectedIds).size !== state.players.length) {
+    status.textContent = "Có cơ thủ bị chọn trùng hoặc chưa được xếp cặp.";
+    status.dataset.type = "error";
+    return;
+  }
+  if (state.rounds.length && !confirm("Tạo cặp mới sẽ xóa điểm và kết quả bracket hiện tại. Tiếp tục?")) return;
+  const playersById = new Map(state.players.map((player) => [player.id, player]));
+  state.players = selectedIds.map((id) => playersById.get(id)).filter(Boolean);
+  state.rounds = [];
+  closeManualPairingModal();
+  buildBracket(false);
+  setAdminNotice("Đã tạo bracket theo cặp thủ công.", "ok");
+}
+
+function closeMatchPairEditor() {
+  const modal = document.querySelector("#matchPairEditorModal");
+  if (modal) modal.hidden = true;
+}
+
+function openMatchPairEditor(roundIndex, matchIndex) {
+  const match = state.rounds[roundIndex]?.matches[matchIndex];
+  const modal = document.querySelector("#matchPairEditorModal");
+  if (!match || !modal) return;
+  const optionMarkup = (current) => [
+    `<option value="">Chờ tự động</option>`,
+    ...state.players.map((player) => `<option value="${escapeHtml(player.name)}"${player.name === current ? " selected" : ""}>${escapeHtml(player.name)}</option>`),
+  ].join("");
+  document.querySelector("#matchPairRound").value = roundIndex;
+  document.querySelector("#matchPairMatch").value = matchIndex;
+  document.querySelector("#matchPairEditorTitle").textContent = `${state.rounds[roundIndex].title} • Trận ${matchIndex + 1}`;
+  document.querySelector("#matchPairPlayerA").innerHTML = optionMarkup(match.playerA);
+  document.querySelector("#matchPairPlayerB").innerHTML = optionMarkup(match.playerB);
+  const status = document.querySelector("#matchPairEditorStatus");
+  status.textContent = "Chọn hai cơ thủ hoặc để Chờ tự động.";
+  status.dataset.type = "";
+  modal.hidden = false;
+}
+
+function submitMatchPairEditor(event) {
+  event.preventDefault();
+  const roundIndex = Number(document.querySelector("#matchPairRound").value);
+  const matchIndex = Number(document.querySelector("#matchPairMatch").value);
+  const playerASelect = document.querySelector("#matchPairPlayerA");
+  const playerBSelect = document.querySelector("#matchPairPlayerB");
+  const status = document.querySelector("#matchPairEditorStatus");
+  let playerA = playerASelect.value || null;
+  let playerB = playerBSelect.value || null;
+  if (playerA && playerA === playerB) {
+    status.textContent = "Hai vị trí không thể chọn cùng một cơ thủ.";
+    status.dataset.type = "error";
+    return;
+  }
+  updateMatchPlayers(roundIndex, matchIndex, playerA, playerB);
+  closeMatchPairEditor();
+  setAdminNotice("Đã cập nhật cặp đấu.", "ok");
+}
+
 function createNewTournamentFromModal(event) {
   event.preventDefault();
   const nameInput = document.querySelector("#newTournamentName");
@@ -3415,6 +3567,19 @@ function bindTournamentManager() {
     if (event.target.id === "createTournamentModal") {
       closeCreateTournamentModal();
     }
+  });
+  document.querySelector("#openManualPairing")?.addEventListener("click", openManualPairingModal);
+  document.querySelector("#manualPairingForm")?.addEventListener("submit", submitManualPairing);
+  document.querySelector("#closeManualPairing")?.addEventListener("click", closeManualPairingModal);
+  document.querySelector("#cancelManualPairing")?.addEventListener("click", closeManualPairingModal);
+  document.querySelector("#manualPairingModal")?.addEventListener("click", (event) => {
+    if (event.target.id === "manualPairingModal") closeManualPairingModal();
+  });
+  document.querySelector("#matchPairEditorForm")?.addEventListener("submit", submitMatchPairEditor);
+  document.querySelector("#closeMatchPairEditor")?.addEventListener("click", closeMatchPairEditor);
+  document.querySelector("#cancelMatchPairEditor")?.addEventListener("click", closeMatchPairEditor);
+  document.querySelector("#matchPairEditorModal")?.addEventListener("click", (event) => {
+    if (event.target.id === "matchPairEditorModal") closeMatchPairEditor();
   });
 
   document.querySelector("#tournamentForm")?.addEventListener("submit", (event) => {

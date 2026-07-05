@@ -1995,6 +1995,46 @@ main {
   gap: 8px;
 }
 
+.manual-pairing-card {
+  width: min(760px, calc(100% - 28px));
+  max-height: calc(100vh - 36px);
+  overflow: auto;
+}
+
+.manual-pairing-list {
+  display: grid;
+  gap: 10px;
+}
+
+.manual-pairing-row {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr) 32px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.manual-pairing-row strong,
+.manual-pairing-row span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  text-align: center;
+}
+
+@media (max-width: 620px) {
+  .manual-pairing-row {
+    grid-template-columns: 54px minmax(0, 1fr);
+  }
+
+  .manual-pairing-row > span {
+    display: none;
+  }
+}
+
 .table-wrap {
   overflow-x: auto;
 }
