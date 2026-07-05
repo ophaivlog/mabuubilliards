@@ -92,15 +92,55 @@ function normalizeStateShape(target) {
     target.rounds = [];
   }
 
+  const firstDiagramLoserRound = target.rounds.findIndex((round) => round.bracketGroup === "diagram-loser");
+  const firstDiagramWinnerRound = target.rounds.findIndex((round) => round.bracketGroup === "diagram-winner");
+  if (firstDiagramWinnerRound >= 0) {
+    target.rounds.forEach((round, roundIndex) => {
+      if (round.bracketGroup !== "diagram-winner") return;
+      (round.matches || []).forEach((match, matchIndex) => {
+        const previousRoundWasOdd = roundIndex > firstDiagramWinnerRound && target.rounds[roundIndex - 1]?.bracketGroup === "diagram-winner" && target.rounds[roundIndex - 1].matches.length % 2 === 1;
+        match.allowSingleAdvance = roundIndex === firstDiagramWinnerRound || (previousRoundWasOdd && matchIndex === round.matches.length - 1);
+        const hasOnlyOnePlayer = Boolean(match.playerA) !== Boolean(match.playerB);
+        const wasPrematureBye = roundIndex > firstDiagramWinnerRound && !match.allowSingleAdvance && hasOnlyOnePlayer && match.status === "done" && (match.scoreA === "W" || match.scoreB === "W");
+        if (wasPrematureBye) {
+          match.scoreA = "";
+          match.scoreB = "";
+          match.winner = null;
+          match.status = "waiting";
+        }
+      });
+    });
+  }
+  if (firstDiagramLoserRound >= 0) {
+    target.rounds.forEach((round, roundIndex) => {
+      if (round.bracketGroup !== "diagram-loser") return;
+      (round.matches || []).forEach((match, matchIndex) => {
+        const previousRoundWasOdd = roundIndex > firstDiagramLoserRound && target.rounds[roundIndex - 1]?.bracketGroup === "diagram-loser" && target.rounds[roundIndex - 1].matches.length % 2 === 1;
+        match.allowSingleAdvance = roundIndex === firstDiagramLoserRound || (previousRoundWasOdd && matchIndex === round.matches.length - 1);
+        const hasOnlyOnePlayer = Boolean(match.playerA) !== Boolean(match.playerB);
+        const wasPrematureBye = roundIndex > firstDiagramLoserRound && !match.allowSingleAdvance && hasOnlyOnePlayer && match.status === "done" && (match.scoreA === "W" || match.scoreB === "W");
+        if (wasPrematureBye) {
+          match.scoreA = "";
+          match.scoreB = "";
+          match.winner = null;
+          match.status = "waiting";
+        }
+      });
+    });
+  }
+
   const hasLegacyDoubleBracket = target.tournament?.format === "double" && target.rounds.length && !target.rounds.some((round) =>
     round.bracketGroup?.startsWith("diagram-"),
   );
   const hasPlayedLegacyMatch = target.rounds.some((round) => (round.matches || []).some((match) =>
     match.status === "done" && match.playerA && match.playerB && match.scoreA !== "W" && match.scoreB !== "W",
   ));
+  const hasOutdated24Diagram = target.tournament?.format === "double" && target.players.length === 24 && target.rounds[0]?.bracketGroup === "diagram-winner" && target.rounds[0]?.matches?.length !== 12;
+  if (hasOutdated24Diagram && !hasPlayedLegacyMatch) {
+    target.rounds = buildDiagramBracket(target.players.map((player) => player.name));
+  }
   if (hasLegacyDoubleBracket && !hasPlayedLegacyMatch && [16, 24, 32].includes(target.players.length)) {
-    const bracketSize = nextPowerOfTwo(target.players.length);
-    const slots = distributeDiagramSlots(target.players.slice(0, 32).map((player) => player.name), bracketSize);
+    const slots = target.players.slice(0, 32).map((player) => player.name);
     target.rounds = buildDiagramBracket(slots);
   }
 
@@ -217,6 +257,7 @@ function applyRemoteState(remoteState) {
   state.rankingIgnoredResults = Array.isArray(remoteState.rankingIgnoredResults) ? remoteState.rankingIgnoredResults : state.rankingIgnoredResults || [];
   state.tournamentHistory = Array.isArray(remoteState.tournamentHistory) ? remoteState.tournamentHistory : [];
   state.rounds = Array.isArray(remoteState.rounds) ? remoteState.rounds : [];
+  normalizeStateShape(state);
   cacheState();
   renderAll();
   return true;
@@ -879,16 +920,23 @@ function setMatchRoute(match, kind, round, targetMatch, slot) {
 
 function buildDiagramBracket(slots) {
   const size = slots.length;
-  const winnerRoundCount = Math.log2(size);
-  const winnerDefinitions = Array.from({ length: winnerRoundCount }, (_, index) => ({
+  const winnerCounts = [];
+  for (let count = size / 2; count >= 1; count = Math.ceil(count / 2)) {
+    winnerCounts.push(count);
+    if (count === 1) break;
+  }
+  const winnerRoundCount = winnerCounts.length;
+  const loserCounts = [Math.ceil(winnerCounts[0] / 2), Math.ceil(winnerCounts[0] / 2)];
+  while (loserCounts.length < winnerRoundCount) loserCounts.push(Math.ceil(loserCounts[loserCounts.length - 1] / 2));
+  const winnerDefinitions = winnerCounts.map((count, index) => ({
     title: index === 0 ? "Vòng đầu" : index === winnerRoundCount - 1 ? "Chung kết nhánh thắng" : index === winnerRoundCount - 2 ? "Bán kết nhánh thắng" : `Vòng ${index + 1} nhánh thắng`,
     group: "diagram-winner",
-    count: size / 2 ** (index + 1),
+    count,
   }));
-  const loserDefinitions = Array.from({ length: winnerRoundCount }, (_, index) => ({
+  const loserDefinitions = loserCounts.map((count, index) => ({
     title: index === 0 ? "Cơ hội thứ hai" : index === winnerRoundCount - 1 ? "Chung kết nhánh thua" : index === winnerRoundCount - 2 ? "Bán kết nhánh thua" : `Vòng ${index + 1} nhánh thua`,
     group: "diagram-loser",
-    count: index < 2 ? size / 4 : size / 2 ** (index + 1),
+    count,
   }));
   const definitions = [...winnerDefinitions, ...loserDefinitions, { title: "CHUNG KẾT", group: "diagram-grand", count: 1 }];
   const rounds = definitions.map((definition, roundIndex) => ({
@@ -911,9 +959,18 @@ function buildDiagramBracket(slots) {
     rounds[r].matches.forEach((match, index) => {
       setMatchRoute(match, "nextWin", r + 1, Math.floor(index / 2), index % 2 ? "playerB" : "playerA");
     });
+    if (rounds[r].matches.length % 2 === 1) {
+      rounds[r + 1].matches[rounds[r + 1].matches.length - 1].allowSingleAdvance = true;
+    }
   }
   const loserStart = winnerRoundCount;
   const grandRound = winnerRoundCount * 2;
+  rounds[0].matches.forEach((match) => {
+    match.allowSingleAdvance = true;
+  });
+  rounds[loserStart].matches.forEach((match) => {
+    match.allowSingleAdvance = true;
+  });
   setMatchRoute(rounds[winnerRoundCount - 1].matches[0], "nextWin", grandRound, 0, "playerA");
 
   // Người thua vòng đầu gặp nhau, sau đó gặp người thua ở tứ kết nhánh thắng.
@@ -926,6 +983,9 @@ function buildDiagramBracket(slots) {
     rounds[loserStart + index].matches.forEach((match, matchIndex) => {
       setMatchRoute(match, "nextWin", loserStart + index + 1, Math.floor(matchIndex / 2), matchIndex % 2 ? "playerB" : "playerA");
     });
+    if (rounds[loserStart + index].matches.length % 2 === 1) {
+      rounds[loserStart + index + 1].matches[rounds[loserStart + index + 1].matches.length - 1].allowSingleAdvance = true;
+    }
   }
   setMatchRoute(rounds[loserStart + winnerRoundCount - 1].matches[0], "nextWin", grandRound, 0, "playerB");
   return rounds;
@@ -1057,10 +1117,10 @@ function recalculateDoubleBracket() {
       if (match.status === "done" && match.playerA && match.playerB && Number.isFinite(a) && Number.isFinite(b) && a !== b && match.scoreA !== "" && match.scoreB !== "") {
         winner = a > b ? match.playerA : match.playerB;
         loser = a > b ? match.playerB : match.playerA;
-      } else if ((match.bracketGroup === "winner" || match.bracketGroup === "diagram-winner" || match.bracketGroup === "diagram-loser") && match.playerA && !match.playerB) {
+      } else if ((match.bracketGroup === "winner" || match.allowSingleAdvance) && match.playerA && !match.playerB) {
         winner = match.playerA;
         match.scoreA = "W";
-      } else if ((match.bracketGroup === "winner" || match.bracketGroup === "diagram-winner" || match.bracketGroup === "diagram-loser") && !match.playerA && match.playerB) {
+      } else if ((match.bracketGroup === "winner" || match.allowSingleAdvance) && !match.playerA && match.playerB) {
         winner = match.playerB;
         match.scoreB = "W";
       }
@@ -1109,12 +1169,7 @@ function buildBracket(randomize = false) {
   const size = nextPowerOfTwo(bracketPlayers.length);
   const titles = roundTitles(size);
   let slots = [...bracketPlayers.map((player) => player.name)];
-  while (slots.length < size) {
-    slots.push(null);
-  }
-  if (state.tournament.format === "double") {
-    slots = distributeDiagramSlots(bracketPlayers.map((player) => player.name), size);
-  }
+  if (state.tournament.format !== "double") while (slots.length < size) slots.push(null);
 
   state.rounds = state.tournament.format === "double"
     ? buildDiagramBracket(slots)
@@ -1328,6 +1383,7 @@ function diagramBracketLayout() {
   const loserHeight = Math.max(1, state.rounds[winnerRoundCount]?.matches.length || 1) * rowHeight;
   return {
     winnerRoundCount,
+    firstRoundMatches,
     stepX: cardWidth + 86,
     columns: winnerRoundCount + 1,
     winnerHeight,
@@ -1345,14 +1401,14 @@ function matchPosition(roundIndex, matchIndex) {
     let group;
     if (roundIndex < layout.winnerRoundCount) {
       column = roundIndex;
-      group = 2 ** roundIndex;
+      group = layout.firstRoundMatches / Math.max(1, round.matches.length);
     } else if (roundIndex < layout.winnerRoundCount * 2) {
       const loserIndex = roundIndex - layout.winnerRoundCount;
       column = loserIndex;
-      group = loserIndex < 2 ? 2 : 2 ** loserIndex;
+      group = layout.firstRoundMatches / Math.max(1, round.matches.length);
     } else {
       column = layout.winnerRoundCount;
-      group = 2 ** (layout.winnerRoundCount - 1);
+      group = layout.firstRoundMatches;
     }
     const localCenter = (matchIndex * group + group / 2) * rowHeight;
     let center = topOffset + localCenter;
@@ -3422,8 +3478,7 @@ function bindTournamentManager() {
   });
   document.querySelector("#resetScores")?.addEventListener("click", () => {
     if (state.tournament.format === "double" && state.rounds.some((round) => round.bracketGroup === "record" || round.bracketGroup === "record-final")) {
-      const bracketSize = nextPowerOfTwo(state.players.length);
-      const slots = distributeDiagramSlots(state.players.slice(0, 32).map((player) => player.name), bracketSize);
+      const slots = state.players.slice(0, 32).map((player) => player.name);
       state.rounds = buildDiagramBracket(slots);
       recalculateDoubleBracket();
       saveState();
