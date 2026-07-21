@@ -7,6 +7,7 @@ const topOffset = 70;
 const tableCount = 14;
 let ezvizPlayer = null;
 let tournamentLivePlayer = null;
+let activeTournamentLiveMatch = null;
 const isAdmin = document.body?.dataset.mode === "admin";
 let supabaseClient = null;
 let cloudSaveTimer = null;
@@ -611,6 +612,7 @@ function closeTournamentLiveWindow() {
     tournamentLivePlayer.stop();
   }
   tournamentLivePlayer = null;
+  activeTournamentLiveMatch = null;
 
   const modal = document.querySelector("#tournamentLiveWindow");
   if (modal) {
@@ -665,6 +667,42 @@ function getMatchLiveInfo(matchCard) {
   };
 }
 
+function getMatchLiveInfoFromState(roundIndex, matchIndex) {
+  const match = state.rounds[roundIndex]?.matches[matchIndex];
+  if (!match) {
+    return {};
+  }
+
+  return {
+    label: `Tran ${match.matchIndex + 1}`,
+    table: Number(match.table) || matchIndex + 1,
+    status: matchStatusLabel(match.status),
+    statusValue: match.status || "pending",
+    playerA: match.playerA || "TBD",
+    scoreA: match.scoreA || "-",
+    playerB: match.playerB || "TBD",
+    scoreB: match.scoreB || "-",
+    winnerA: match.winner === match.playerA,
+    winnerB: match.winner === match.playerB,
+    roundIndex,
+    matchIndex,
+  };
+}
+
+function isTournamentLiveShowingMatch(roundIndex, matchIndex) {
+  const modal = document.querySelector("#tournamentLiveWindow");
+  return !!modal && !modal.hidden && activeTournamentLiveMatch?.roundIndex === roundIndex && activeTournamentLiveMatch?.matchIndex === matchIndex;
+}
+
+function refreshOpenTournamentLiveScore(roundIndex, matchIndex) {
+  if (!isTournamentLiveShowingMatch(roundIndex, matchIndex)) {
+    return;
+  }
+
+  const modal = document.querySelector("#tournamentLiveWindow");
+  renderTournamentLiveScore(modal, getMatchLiveInfoFromState(roundIndex, matchIndex));
+}
+
 function canOpenMatchLive(matchInfo = {}) {
   const hasPlayers = matchInfo.playerA && matchInfo.playerA !== "TBD" && matchInfo.playerB && matchInfo.playerB !== "TBD";
   return hasPlayers && matchInfo.status === "Đang đấu";
@@ -710,6 +748,7 @@ function renderTournamentLiveScore(modal, matchInfo = {}) {
   score.querySelectorAll("[data-live-score]").forEach((input) => {
     input.addEventListener("change", () => {
       updateMatchScore(matchInfo.roundIndex, matchInfo.matchIndex, input.dataset.liveScore, input.value.trim());
+      refreshOpenTournamentLiveScore(matchInfo.roundIndex, matchInfo.matchIndex);
     });
   });
   score.querySelector("[data-live-status]")?.addEventListener("change", (event) => {
@@ -744,6 +783,9 @@ async function openTournamentLiveWindow(table, matchInfo = "") {
   const status = modal.querySelector("#tournamentLiveStatus");
 
   modal.hidden = false;
+  activeTournamentLiveMatch = Number.isInteger(info.roundIndex) && Number.isInteger(info.matchIndex)
+    ? { roundIndex: info.roundIndex, matchIndex: info.matchIndex }
+    : null;
   title.textContent = `${info.label ? `${info.label} - ` : ""}Ban ${tableNumber}`;
   renderTournamentLiveScore(modal, { ...info, table: tableNumber });
   preview.classList.remove("live-mode");
@@ -1297,12 +1339,14 @@ function updateMatchScore(roundIndex, matchIndex, field, value) {
     }
     saveState();
     renderAll();
+    refreshOpenTournamentLiveScore(roundIndex, matchIndex);
     return;
   }
   if (isRoutedBracketMatch(match)) {
     recalculateDoubleBracket();
     saveState();
     renderAll();
+    refreshOpenTournamentLiveScore(roundIndex, matchIndex);
     return;
   }
   const scoreA = Number(match.scoreA);
@@ -1320,6 +1364,7 @@ function updateMatchScore(roundIndex, matchIndex, field, value) {
 
   saveState();
   renderAll();
+  refreshOpenTournamentLiveScore(roundIndex, matchIndex);
 }
 
 function updateMatchStatus(roundIndex, matchIndex, nextStatus) {
@@ -1362,6 +1407,18 @@ function updateMatchStatus(roundIndex, matchIndex, nextStatus) {
   }
   saveState();
   renderAll();
+  if (nextStatus === "live") {
+    const liveInfo = getMatchLiveInfoFromState(roundIndex, matchIndex);
+    if (canOpenMatchLive(liveInfo)) {
+      if (isTournamentLiveShowingMatch(roundIndex, matchIndex)) {
+        refreshOpenTournamentLiveScore(roundIndex, matchIndex);
+      } else {
+        window.openTournamentCameraTable?.(liveInfo.table, liveInfo);
+      }
+    }
+  } else {
+    refreshOpenTournamentLiveScore(roundIndex, matchIndex);
+  }
 }
 
 function matchStatusControl(match, roundIndex, matchIndex) {
