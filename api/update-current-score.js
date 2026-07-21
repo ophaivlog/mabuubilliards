@@ -90,6 +90,29 @@ function applyScoreToMatch(match, payload) {
   return "fallback";
 }
 
+function applyStatusToMatch(match, payload) {
+  const status = String(payload.status || "").trim().toLowerCase();
+  if (!["pending", "live", "done"].includes(status)) {
+    return match.status || "pending";
+  }
+
+  match.status = status;
+  if (status === "live") {
+    match.winner = null;
+    return status;
+  }
+
+  if (status === "done") {
+    const scoreA = Number(match.scoreA);
+    const scoreB = Number(match.scoreB);
+    if (match.scoreA !== "" && match.scoreB !== "" && Number.isFinite(scoreA) && Number.isFinite(scoreB) && scoreA !== scoreB) {
+      match.winner = scoreA > scoreB ? match.playerA : match.playerB;
+    }
+  }
+
+  return status;
+}
+
 async function supabaseRequest(path, options = {}) {
   const url = process.env.SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -145,6 +168,7 @@ module.exports = async function handler(req, res) {
     }
 
     const mapping = applyScoreToMatch(live.match, payload);
+    const status = applyStatusToMatch(live.match, payload);
     await supabaseRequest(`${table}?id=eq.${encodeURIComponent(recordId)}`, {
       method: "PATCH",
       headers: {
@@ -164,6 +188,8 @@ module.exports = async function handler(req, res) {
       playerB: live.match.playerB,
       scoreA: live.match.scoreA,
       scoreB: live.match.scoreB,
+      status,
+      winner: live.match.winner || null,
       mapping,
     });
   } catch (error) {
