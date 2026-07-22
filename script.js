@@ -36,6 +36,8 @@ const defaultPlayers = [
 const state = loadState();
 let selectedTournamentId = "current";
 let selectedTournamentDetailTab = "info";
+let selectedCameraView = "lan";
+let pendingAppPin = null;
 let bracketFitMode = false;
 let bracketManualScale = 1;
 let bracketResizeObserver = null;
@@ -52,6 +54,8 @@ function createDefaultState() {
     rankingIgnoredResults: [],
     rankingExcludedPlayers: [],
     registrationRequests: [],
+    lanCameras: [],
+    appPin: "123456",
     tournamentHistory: [],
     rounds: [],
   };
@@ -88,6 +92,12 @@ function normalizeStateShape(target) {
   if (!Array.isArray(target.registrationRequests)) {
     target.registrationRequests = [];
   }
+
+  if (!Array.isArray(target.lanCameras)) {
+    target.lanCameras = [];
+  }
+  target.lanCameras = target.lanCameras.map(normalizeLanCamera).filter(Boolean).sort((a, b) => a.table - b.table);
+  target.appPin = normalizeAppPin(target.appPin) || "123456";
 
   if (!Array.isArray(target.tournamentHistory)) {
     target.tournamentHistory = [];
@@ -261,6 +271,8 @@ function applyRemoteState(remoteState) {
   state.playerStats = Array.isArray(remoteState.playerStats) ? remoteState.playerStats : state.playerStats || [];
   state.rankingIgnoredResults = Array.isArray(remoteState.rankingIgnoredResults) ? remoteState.rankingIgnoredResults : state.rankingIgnoredResults || [];
   state.rankingExcludedPlayers = Array.isArray(remoteState.rankingExcludedPlayers) ? remoteState.rankingExcludedPlayers : state.rankingExcludedPlayers || [];
+  state.lanCameras = Array.isArray(remoteState.lanCameras) ? remoteState.lanCameras : [];
+  state.appPin = normalizeAppPin(remoteState.appPin) || state.appPin || "123456";
   state.tournamentHistory = Array.isArray(remoteState.tournamentHistory) ? remoteState.tournamentHistory : [];
   state.rounds = Array.isArray(remoteState.rounds) ? remoteState.rounds : [];
   normalizeStateShape(state);
@@ -326,6 +338,8 @@ async function saveCloudState() {
         playerStats: state.playerStats,
         rankingIgnoredResults: state.rankingIgnoredResults,
         rankingExcludedPlayers: state.rankingExcludedPlayers,
+        lanCameras: state.lanCameras,
+        appPin: state.appPin,
         tournamentHistory: state.tournamentHistory,
         rounds: state.rounds,
       },
@@ -1903,14 +1917,19 @@ function renderBracket() {
 }
 
 function bindTabs() {
-  const buttons = document.querySelectorAll(".tab");
+  const buttons = document.querySelectorAll(".tab, .nav-submenu button, .camera-view-button");
+  const topTabs = document.querySelectorAll(".tab");
   const panels = document.querySelectorAll(".panel");
 
   const activate = (tabName, options = {}) => {
-    buttons.forEach((button) => button.classList.toggle("active", button.dataset.tab === tabName));
+    if (tabName === "camera") {
+      selectedCameraView = options.cameraView || "lan";
+    }
+    topTabs.forEach((button) => button.classList.toggle("active", button.dataset.tab === tabName));
     panels.forEach((panel) => {
       panel.hidden = panel.id !== tabName;
     });
+    document.querySelector("[data-camera-menu]")?.classList.remove("open");
     if (tabName === "bracket") {
       requestAnimationFrame(() => requestAnimationFrame(applyBracketScale));
     }
@@ -1920,13 +1939,30 @@ function bindTabs() {
     if (tabName === "tournaments") {
       renderTournamentDirectory();
     }
+    if (tabName === "camera") {
+      renderCameraViewPanels();
+    }
     if (options.focusTournamentName) {
       document.querySelector("#tournamentName")?.focus();
     }
   };
 
   buttons.forEach((button) => {
-    button.addEventListener("click", () => activate(button.dataset.tab));
+    button.addEventListener("click", () => {
+      const cameraMenu = document.querySelector("[data-camera-menu]");
+      if (button.parentElement?.matches("[data-camera-menu]")) {
+        cameraMenu?.classList.toggle("open");
+        return;
+      }
+      activate(button.dataset.tab, { cameraView: button.dataset.cameraView });
+    });
+  });
+
+  const cameraMenu = document.querySelector("[data-camera-menu]");
+  document.addEventListener("click", (event) => {
+    if (!event.target.closest?.("[data-camera-menu]")) {
+      cameraMenu?.classList.remove("open");
+    }
   });
 
   document.querySelectorAll("[data-home-tab]").forEach((button) => {
@@ -3280,6 +3316,99 @@ function renderDownload() {
     : "Chưa có dữ liệu để tải về.";
 }
 
+function normalizeLanCamera(item) {
+  const table = Number(item?.table);
+  const address = String(item?.address || "").trim();
+  const verifyCode = String(item?.verifyCode || "").trim();
+  if (!Number.isInteger(table) || table <= 0 || !address) {
+    return null;
+  }
+  return { table, address, verifyCode };
+}
+
+function normalizeAppPin(value) {
+  const pin = String(value || "").replace(/\D/g, "");
+  return pin.length === 6 ? pin : "";
+}
+
+function renderAppPinSettings() {
+  const input = document.querySelector("#appPinInput");
+  const summary = document.querySelector("#appPinSummary");
+  const dots = document.querySelector("#appPinDots");
+  const savedCard = document.querySelector("#savedAppPinCard");
+  if (!input || !summary || !dots || !savedCard) return;
+  const pin = normalizeAppPin(state.appPin) || "123456";
+  if (pendingAppPin === null) pendingAppPin = "";
+  input.value = pendingAppPin;
+  summary.textContent = `${pin.length} số`;
+  savedCard.textContent = pin;
+  dots.innerHTML = Array.from({ length: 6 }, (_, index) =>
+    `<span class="${index < pendingAppPin.length ? "filled" : ""}">${escapeHtml(pendingAppPin[index] || "")}</span>`,
+  ).join("");
+}
+
+function parseLanCameraLines(text) {
+  return String(text || "")
+    .split(/\r?\n/)
+    .map((line, index) => {
+      const parts = line.split("|").map((part) => part.trim());
+      if (!parts.some(Boolean)) return null;
+      if (parts.length < 3) {
+        throw new Error(`Dòng ${index + 1} chưa đúng định dạng BÀN SỐ|IP:PORT|Mã vr`);
+      }
+      const table = Number(parts[0].replace(/\D/g, ""));
+      const camera = normalizeLanCamera({
+        table,
+        address: parts[1],
+        verifyCode: parts.slice(2).join("|"),
+      });
+      if (!camera) {
+        throw new Error(`Dòng ${index + 1} chưa có bàn số hoặc IP:PORT hợp lệ`);
+      }
+      return camera;
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.table - b.table);
+}
+
+function lanCameraLines(cameras = state.lanCameras) {
+  return (Array.isArray(cameras) ? cameras : [])
+    .map(normalizeLanCamera)
+    .filter(Boolean)
+    .sort((a, b) => a.table - b.table)
+    .map((camera) => `${camera.table}|${camera.address}|${camera.verifyCode}`)
+    .join("\n");
+}
+
+function renderLanCameraSettings() {
+  const input = document.querySelector("#lanCameraListInput");
+  const count = document.querySelector("#lanCameraCountLabel");
+  const list = document.querySelector("#lanCameraPreviewList");
+  if (!input || !count || !list) return;
+
+  input.value = lanCameraLines();
+  const cameras = (state.lanCameras || []).map(normalizeLanCamera).filter(Boolean).sort((a, b) => a.table - b.table);
+  count.textContent = `${cameras.length} camera`;
+  list.innerHTML = cameras.length
+    ? cameras.map((camera) => `
+        <article class="lan-camera-item">
+          <strong>Bàn ${String(camera.table).padStart(2, "0")}</strong>
+          <span>${escapeHtml(camera.address)}</span>
+          <small>${camera.verifyCode ? "Đã có mã vr" : "Chưa có mã vr"}</small>
+        </article>
+      `).join("")
+    : `<div class="empty-state">Chưa có camera nội bộ. Nhập theo định dạng BÀN SỐ|IP:PORT|Mã vr.</div>`;
+}
+
+function renderCameraViewPanels() {
+  document.querySelectorAll("[data-camera-view-panel]").forEach((panel) => {
+    panel.hidden = panel.dataset.cameraViewPanel !== selectedCameraView;
+  });
+  document.querySelectorAll("[data-camera-view]").forEach((button) => {
+    button.classList.toggle("selected", button.dataset.cameraView === selectedCameraView);
+  });
+}
+
 function renderAll() {
   renderTournamentDirectory();
   renderHome();
@@ -3291,6 +3420,9 @@ function renderAll() {
   renderSchedule();
   renderRanking();
   renderHistory();
+  renderLanCameraSettings();
+  renderCameraViewPanels();
+  renderAppPinSettings();
   renderDownload();
   keepActivePanelVisible();
 }
@@ -3741,6 +3873,69 @@ function bindTournamentManager() {
     saveState();
     renderAll();
     setAdminNotice("Đã xóa toàn bộ dữ liệu bảng xếp hạng.", "ok");
+  });
+
+  document.querySelector("#lanCameraForm")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const input = document.querySelector("#lanCameraListInput");
+    const status = document.querySelector("#lanCameraStatus");
+    try {
+      state.lanCameras = parseLanCameraLines(input?.value || "");
+      saveState();
+      renderLanCameraSettings();
+      if (status) {
+        status.textContent = `Đã lưu ${state.lanCameras.length} camera nội bộ.`;
+        status.dataset.type = "ok";
+      }
+      setAdminNotice(`Đã lưu ${state.lanCameras.length} camera nội bộ.`, "ok");
+    } catch (error) {
+      if (status) {
+        status.textContent = error.message;
+        status.dataset.type = "error";
+      }
+      setAdminNotice(error.message, "error");
+    }
+  });
+
+  document.querySelector("#appPinForm")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const input = document.querySelector("#appPinInput");
+    const status = document.querySelector("#appPinStatus");
+    const pin = normalizeAppPin(input?.value || "");
+    if (!pin) {
+      if (status) {
+        status.textContent = "Mã PIN phải gồm đúng 6 chữ số.";
+        status.dataset.type = "error";
+      }
+      setAdminNotice("Mã PIN APP chưa hợp lệ.", "error");
+      return;
+    }
+    state.appPin = pin;
+    pendingAppPin = "";
+    saveState();
+    renderAppPinSettings();
+    if (status) {
+      status.textContent = `Đã lưu mã PIN APP ${pin.length} số.`;
+      status.dataset.type = "ok";
+    }
+    setAdminNotice("Đã lưu mã PIN APP.", "ok");
+  });
+
+  document.querySelectorAll("[data-pin-key]").forEach((button) => {
+    button.addEventListener("click", () => {
+      if (pendingAppPin.length >= 6) return;
+      pendingAppPin += button.dataset.pinKey;
+      renderAppPinSettings();
+    });
+  });
+
+  document.querySelectorAll("[data-pin-action]").forEach((button) => {
+    button.addEventListener("click", () => {
+      if (button.dataset.pinAction === "backspace") {
+        pendingAppPin = pendingAppPin.slice(0, -1);
+      }
+      renderAppPinSettings();
+    });
   });
 
   document.querySelector("#archiveTournament")?.addEventListener("click", saveTournamentToHistory);

@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>Ma Buu Tournament Admin</title>
-    <link rel="stylesheet" href="styles.css?v=20260524-13" />
+    <link rel="stylesheet" href="styles.css?v=20260722-2" />
   </head>
   <body data-mode="admin" data-auth="locked">
     <section class="admin-login" id="adminLogin">
@@ -37,9 +37,16 @@
         <button class="tab" type="button" data-tab="bracket"><span>Sơ đồ đấu</span></button>
         <button class="tab" type="button" data-tab="tournaments"><span>Giải đấu</span></button>
         <button class="tab" type="button" data-tab="ranking"><span>Xếp hạng</span></button>
-        <button class="tab" type="button" data-tab="camera"><span>Camera</span></button>
+        <div class="nav-dropdown" data-camera-menu>
+          <button class="tab" type="button" data-tab="camera" data-camera-view="lan"><span>Camera</span></button>
+          <div class="nav-submenu">
+            <button type="button" data-tab="camera" data-camera-view="lan">Cam nội bộ</button>
+            <button type="button" data-tab="camera" data-camera-view="api">Cam API</button>
+          </div>
+        </div>
         <button class="tab" type="button" data-tab="minigame"><span>Mini game</span></button>
         <button class="tab" type="button" data-tab="contact"><span>Liên hệ</span></button>
+        <button class="tab" type="button" data-tab="appPin"><span>Mã PIN APP</span></button>
         <button class="tab" type="button" data-tab="download"><span>Tải về</span></button>
       </nav>
 
@@ -271,6 +278,35 @@
       </section>
 
       <section class="panel camera-panel" id="camera" hidden>
+        <div class="camera-view-switch" data-admin-only>
+          <button class="camera-view-button selected" type="button" data-tab="camera" data-camera-view="lan">Cam nội bộ</button>
+          <button class="camera-view-button" type="button" data-tab="camera" data-camera-view="api">Cam API</button>
+        </div>
+
+        <div class="manager-grid lan-camera-admin" data-admin-only data-camera-view-panel="lan">
+          <form class="form-section" id="lanCameraForm">
+            <p>CAMERA NỘI BỘ</p>
+            <h2>Danh sách camera nội bộ</h2>
+            <label>
+              Mỗi dòng: BÀN SỐ|IP:PORT|Mã vr
+              <textarea id="lanCameraListInput" rows="8" spellcheck="false" placeholder="1|192.168.1.101:554|ABCDEF&#10;2|192.168.1.102:554|GHIJKL"></textarea>
+            </label>
+            <button class="primary-action" type="submit">Lưu danh sách camera</button>
+            <div class="form-status" id="lanCameraStatus">Danh sách này sẽ được app Mubuune tải về khi bấm bánh răng camera.</div>
+          </form>
+
+          <div class="data-section">
+            <div class="section-heading">
+              <div>
+                <p>ĐANG LƯU</p>
+                <h2 id="lanCameraCountLabel">0 camera</h2>
+              </div>
+            </div>
+            <div class="lan-camera-list" id="lanCameraPreviewList"></div>
+          </div>
+        </div>
+
+        <div data-camera-view-panel="api">
         <div class="camera-header">
           <div>
             <p>CAMERA BÀN</p>
@@ -345,6 +381,7 @@
               </div>
             </div>
           </div>
+        </div>
         </div>
       </section>
 
@@ -425,6 +462,44 @@
           </div>
         </div>
       </section>
+
+      <section class="panel" id="appPin" hidden>
+        <div class="manager-grid">
+          <form class="form-section" id="appPinForm">
+            <p>BẢO MẬT APP</p>
+            <h2>Mã PIN APP</h2>
+            <div class="web-pin-pad" aria-label="PIN mở khóa trên app">
+              <div class="web-pin-dots" id="appPinDots" aria-hidden="true"></div>
+              <input id="appPinInput" type="hidden" />
+              <div class="web-pin-keys" id="appPinKeys">
+                <button type="button" data-pin-key="1">1</button>
+                <button type="button" data-pin-key="2">2</button>
+                <button type="button" data-pin-key="3">3</button>
+                <button type="button" data-pin-key="4">4</button>
+                <button type="button" data-pin-key="5">5</button>
+                <button type="button" data-pin-key="6">6</button>
+                <button type="button" data-pin-key="7">7</button>
+                <button type="button" data-pin-key="8">8</button>
+                <button type="button" data-pin-key="9">9</button>
+                <button type="submit" class="pin-save-key">Lưu</button>
+                <button type="button" data-pin-key="0">0</button>
+                <button type="button" data-pin-action="backspace">⌫</button>
+              </div>
+            </div>
+            <div class="form-status" id="appPinStatus">App Mubuune sẽ tải mã PIN này từ web để đối chiếu khi mở khóa.</div>
+          </form>
+          <div class="data-section">
+            <div class="section-heading">
+              <div>
+                <p>ĐANG DÙNG</p>
+                <h2 id="appPinSummary">Chưa đặt mã PIN</h2>
+              </div>
+            </div>
+            <div class="saved-pin-card" id="savedAppPinCard">123456</div>
+            <div class="empty-state">Mã PIN APP luôn gồm đúng 6 chữ số.</div>
+          </div>
+        </div>
+      </section>
     </main>
 
     <div class="modal-backdrop" id="createTournamentModal" hidden>
@@ -499,6 +574,6 @@
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="supabase-config.js?v=20260524-2"></script>
-    <script src="script.js?v=20260524-13"></script>
+    <script src="script.js?v=20260722-8"></script>
   </body>
 </html>
