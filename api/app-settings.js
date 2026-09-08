@@ -53,7 +53,13 @@ module.exports = async function handler(req, res) {
     const rows = await supabaseRequest(`${table}?id=eq.${encodeURIComponent(recordId)}&select=data`);
     const data = rows?.[0]?.data || {};
     const appPin = String(data.appPin || "").trim();
-    return json(res, 200, { ok: true, appPin });
+    const banner = data.adBanner || {};
+    const adBanner = {
+      enabled: Boolean(banner.enabled),
+      name: String(banner.name || "").trim(),
+      url: String(banner.url || "").trim(),
+    };
+    return json(res, 200, { ok: true, appPin, adBanner });
   } catch (error) {
     return json(res, error.statusCode || 500, { ok: false, message: error.message });
   }

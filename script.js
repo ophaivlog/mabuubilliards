@@ -12,6 +12,8 @@ const isAdmin = document.body?.dataset.mode === "admin";
 let supabaseClient = null;
 let cloudSaveTimer = null;
 let lastLocalEditAt = 0;
+let adminUnlockPromise = null;
+let unlockedAdminUserId = null;
 const LOCAL_EDIT_SYNC_GUARD_MS = 30000;
 
 const defaultPlayers = [
@@ -36,6 +38,9 @@ const defaultPlayers = [
 const state = loadState();
 let selectedTournamentId = "current";
 let selectedTournamentDetailTab = "info";
+let selectedDetailRoundIndex = 0;
+let selectedBracketRoundIndex = 0;
+let bracketRenderRoundOffset = 0;
 let selectedCameraView = "lan";
 let pendingAppPin = null;
 let bracketFitMode = false;
@@ -48,6 +53,10 @@ function createDefaultState() {
       name: "Ma Buu Billiards Tournament",
       date: new Date().toISOString().slice(0, 10),
       format: "single",
+      rank: "Mở rộng",
+      organizer: "Ma Buu Billiards",
+      location: "Ma Buu Billiards Club",
+      description: "",
     },
     players: [],
     playerStats: [],
@@ -55,7 +64,16 @@ function createDefaultState() {
     rankingExcludedPlayers: [],
     registrationRequests: [],
     lanCameras: [],
+    contact: {
+      name: "Ma Buu Billiards",
+      address: "Thông tin quán trên Google Maps",
+      phone: "",
+      email: "",
+      mapsUrl: "https://maps.app.goo.gl/BNGmfofiftazmygW6",
+      note: "",
+    },
     appPin: "123456",
+    adBanner: { enabled: false, name: "", url: "" },
     tournamentHistory: [],
     rounds: [],
   };
@@ -75,6 +93,11 @@ function cacheState() {
 }
 
 function normalizeStateShape(target) {
+  target.tournament = {
+    ...createDefaultState().tournament,
+    ...(target.tournament || {}),
+  };
+
   if (!Array.isArray(target.players)) {
     target.players = [];
   }
@@ -96,8 +119,13 @@ function normalizeStateShape(target) {
   if (!Array.isArray(target.lanCameras)) {
     target.lanCameras = [];
   }
+  target.contact = {
+    ...createDefaultState().contact,
+    ...(target.contact || {}),
+  };
   target.lanCameras = target.lanCameras.map(normalizeLanCamera).filter(Boolean).sort((a, b) => a.table - b.table);
   target.appPin = normalizeAppPin(target.appPin) || "123456";
+  target.adBanner = normalizeAdBanner(target.adBanner);
 
   if (!Array.isArray(target.tournamentHistory)) {
     target.tournamentHistory = [];
@@ -200,6 +228,10 @@ function setCloudStatus(message, type = "muted") {
     return;
   }
 
+  // Keep successful cloud synchronization silent; only loading states and
+  // actionable errors need to be shown to the user.
+  status.hidden = type === "ok";
+
   status.textContent = message;
   status.dataset.type = type;
 }
@@ -272,7 +304,12 @@ function applyRemoteState(remoteState) {
   state.rankingIgnoredResults = Array.isArray(remoteState.rankingIgnoredResults) ? remoteState.rankingIgnoredResults : state.rankingIgnoredResults || [];
   state.rankingExcludedPlayers = Array.isArray(remoteState.rankingExcludedPlayers) ? remoteState.rankingExcludedPlayers : state.rankingExcludedPlayers || [];
   state.lanCameras = Array.isArray(remoteState.lanCameras) ? remoteState.lanCameras : [];
+  state.contact = {
+    ...createDefaultState().contact,
+    ...(remoteState.contact || {}),
+  };
   state.appPin = normalizeAppPin(remoteState.appPin) || state.appPin || "123456";
+  state.adBanner = normalizeAdBanner(remoteState.adBanner || state.adBanner);
   state.tournamentHistory = Array.isArray(remoteState.tournamentHistory) ? remoteState.tournamentHistory : [];
   state.rounds = Array.isArray(remoteState.rounds) ? remoteState.rounds : [];
   normalizeStateShape(state);
@@ -339,7 +376,9 @@ async function saveCloudState() {
         rankingIgnoredResults: state.rankingIgnoredResults,
         rankingExcludedPlayers: state.rankingExcludedPlayers,
         lanCameras: state.lanCameras,
+        contact: state.contact,
         appPin: state.appPin,
+        adBanner: state.adBanner,
         tournamentHistory: state.tournamentHistory,
         rounds: state.rounds,
       },
@@ -426,18 +465,38 @@ function startCloudAutoRefresh() {
   setInterval(loadCloudState, 10000);
 }
 
-async function unlockAdmin() {
-  document.body.dataset.auth = "unlocked";
-  setLoginStatus("Đã đăng nhập.", "ok");
-  renderAll();
-  await loadCloudState();
-  await loadRegistrationRequests();
-  if (!isTypingInEditableField()) {
+async function unlockAdmin(session = null) {
+  const userId = session?.user?.id || null;
+
+  if (document.body.dataset.auth === "unlocked" && userId && unlockedAdminUserId === userId) {
+    return;
+  }
+
+  if (adminUnlockPromise) {
+    return adminUnlockPromise;
+  }
+
+  unlockedAdminUserId = userId;
+  adminUnlockPromise = (async () => {
+    document.body.dataset.auth = "unlocked";
+    setLoginStatus("Đã đăng nhập.", "ok");
     renderAll();
+    await loadCloudState();
+    await loadRegistrationRequests();
+    if (!isTypingInEditableField()) {
+      renderAll();
+    }
+  })();
+
+  try {
+    await adminUnlockPromise;
+  } finally {
+    adminUnlockPromise = null;
   }
 }
 
 function lockAdmin() {
+  unlockedAdminUserId = null;
   document.body.dataset.auth = "locked";
   setLoginStatus("Dùng tài khoản đã tạo trong Supabase Authentication.");
 }
@@ -463,7 +522,7 @@ function bindAdminAuth() {
     event.preventDefault();
     setLoginStatus("Đang đăng nhập...");
 
-    const { error } = await client.auth.signInWithPassword({
+    const { data, error } = await client.auth.signInWithPassword({
       email: emailInput.value.trim(),
       password: passwordInput.value,
     });
@@ -474,7 +533,7 @@ function bindAdminAuth() {
     }
 
     passwordInput.value = "";
-    await unlockAdmin();
+    await unlockAdmin(data?.session || null);
   });
 
   logoutButton?.addEventListener("click", async () => {
@@ -495,19 +554,36 @@ async function initAdminAuth() {
     return true;
   }
 
-  const { data } = await client.auth.getSession();
+  const { data, error } = await client.auth.getSession();
+  if (error) {
+    lockAdmin();
+    setLoginStatus(`Không đọc được phiên đăng nhập: ${error.message}`, "error");
+    return true;
+  }
+
   if (data?.session) {
-    await unlockAdmin();
+    await unlockAdmin(data.session);
   } else {
     lockAdmin();
   }
 
-  client.auth.onAuthStateChange((_event, session) => {
-    if (session) {
-      unlockAdmin();
-    } else {
-      lockAdmin();
-    }
+  client.auth.onAuthStateChange((event, session) => {
+    // Supabase can deadlock when another Supabase request is awaited directly
+    // inside this callback. Defer all UI/data work until the callback returns.
+    setTimeout(() => {
+      if (!session || event === "SIGNED_OUT") {
+        lockAdmin();
+        return;
+      }
+
+      // TOKEN_REFRESHED keeps the current UI/session alive; it must not trigger
+      // another full data load. SIGNED_IN and INITIAL_SESSION are sufficient.
+      if (event === "SIGNED_IN" || event === "INITIAL_SESSION") {
+        unlockAdmin(session).catch((authError) => {
+          setLoginStatus(`Không mở được trang admin: ${authError.message}`, "error");
+        });
+      }
+    }, 0);
   });
 
   return true;
@@ -576,6 +652,15 @@ function formatRankedPlayerName(name, rank) {
   const cleanName = String(name || "").trim().replace(/\s+\([KIHGFEDCBA]\)$/i, "");
   const cleanRank = String(rank || "").trim().toUpperCase();
   return cleanRank ? `${cleanName} (${cleanRank})` : cleanName;
+}
+
+function splitRankedPlayerName(name, fallbackRank = "") {
+  const value = String(name || "").trim();
+  const match = value.match(/^(.*?)\s+\(([KIHGFEDCBA])\)$/i);
+  return {
+    name: match ? match[1].trim() : value,
+    rank: (match?.[2] || fallbackRank || "—").toUpperCase(),
+  };
 }
 
 function ensureTournamentLiveWindow() {
@@ -882,6 +967,26 @@ function roundTitles(size) {
   return map[size] || map[16];
 }
 
+function groupLabel(index) {
+  let value = index;
+  let label = "";
+  do {
+    label = String.fromCharCode(65 + (value % 26)) + label;
+    value = Math.floor(value / 26) - 1;
+  } while (value >= 0);
+  return label;
+}
+
+function groupedRoundTitle(roundIndex, playerCount) {
+  if (roundIndex === 0) return "Vòng bảng";
+  if (playerCount === 2) return "Chung kết";
+  if (playerCount === 4) return "Bán kết";
+  if (playerCount === 8) return "Tứ kết";
+  if (playerCount === 16) return "Vòng 1/8";
+  if (playerCount === 32) return "Vòng 1/16";
+  return `Vòng ${roundIndex + 1}`;
+}
+
 function makeMatch(roundIndex, matchIndex, playerA = null, playerB = null) {
   return {
     id: `r${roundIndex + 1}m${matchIndex + 1}`,
@@ -895,6 +1000,203 @@ function makeMatch(roundIndex, matchIndex, playerA = null, playerB = null) {
     scoreB: "",
     status: playerA || playerB ? "pending" : "waiting",
     winner: null,
+  };
+}
+
+function isGroupedRound(round) {
+  return round?.bracketGroup === "grouped";
+}
+
+function groupedRoundPlayerNames(round) {
+  const names = [];
+  (round?.matches || []).forEach((match) => {
+    if (match.playerA) names.push(match.playerA);
+    if (match.playerB) names.push(match.playerB);
+  });
+  return [...new Set(names)];
+}
+
+function groupedRoundWinners(round) {
+  if (isGroupedRound(round) && (round.matches || []).some((match) => match.groupRole)) {
+    return groupedRoundQualifiers(round);
+  }
+  return (round?.matches || [])
+    .filter((match) => match.status === "done" && match.winner)
+    .map((match) => match.winner);
+}
+
+function matchLoser(match) {
+  if (!match?.winner || !match.playerA || !match.playerB) return null;
+  return match.winner === match.playerA ? match.playerB : match.playerA;
+}
+
+function groupedRoundQualifiers(round) {
+  const qualifiers = [];
+  (round?.groups || []).forEach((group) => {
+    const groupMatches = (round.matches || []).filter((match) => match.groupIndex === group.index);
+    const winnersMatch = groupMatches.find((match) => match.groupRole === "winners");
+    const deciderMatch = groupMatches.find((match) => match.groupRole === "decider");
+    const finalMatch = groupMatches.find((match) => match.groupRole === "final");
+    if (winnersMatch?.winner) qualifiers.push(winnersMatch.winner);
+    if (deciderMatch?.winner) qualifiers.push(deciderMatch.winner);
+    if (finalMatch?.winner) qualifiers.push(finalMatch.winner);
+  });
+  return qualifiers;
+}
+
+function makeGroupedMatch(roundIndex, matches, groupIndex, groupLabelText, role, label, playerA = null, playerB = null) {
+  const match = makeMatch(roundIndex, matches.length, playerA, playerB);
+  match.id = `grouped-r${roundIndex + 1}g${groupIndex + 1}m${matches.length + 1}`;
+  match.bracketGroup = "grouped";
+  match.groupIndex = groupIndex;
+  match.groupLabel = groupLabelText;
+  match.groupRole = role;
+  match.groupMatchLabel = label;
+  match.seedA = playerA;
+  match.seedB = playerB;
+  match.status = playerA && playerB ? "pending" : "waiting";
+  return match;
+}
+
+function recalculateGroupedRoundObject(round) {
+  if (!isGroupedRound(round)) return;
+  (round.groups || []).forEach((group) => {
+    const groupMatches = round.matches.filter((match) => match.groupIndex === group.index);
+    const openings = groupMatches.filter((match) => match.groupRole === "opening");
+    const winnersMatch = groupMatches.find((match) => match.groupRole === "winners");
+    const losersMatch = groupMatches.find((match) => match.groupRole === "losers");
+    const deciderMatch = groupMatches.find((match) => match.groupRole === "decider");
+    if (!winnersMatch || !losersMatch || !deciderMatch) return;
+
+    const saved = new Map([winnersMatch, losersMatch, deciderMatch].map((match) => [match.groupRole, {
+      scoreA: match.scoreA,
+      scoreB: match.scoreB,
+      status: match.status,
+      winner: match.winner,
+    }]));
+    [winnersMatch, losersMatch, deciderMatch].forEach((match) => {
+      match.playerA = null;
+      match.playerB = null;
+      match.scoreA = "";
+      match.scoreB = "";
+      match.winner = null;
+      match.status = "waiting";
+    });
+
+    if (openings.every((match) => match.status === "done" && match.winner)) {
+      winnersMatch.playerA = openings[0].winner;
+      winnersMatch.playerB = openings[1].winner;
+      losersMatch.playerA = matchLoser(openings[0]);
+      losersMatch.playerB = matchLoser(openings[1]);
+    }
+
+    [winnersMatch, losersMatch].forEach((match) => {
+      const old = saved.get(match.groupRole);
+      if (match.playerA && match.playerB) {
+        match.status = "pending";
+        if (old?.status === "done" && old.winner && [match.playerA, match.playerB].includes(old.winner)) {
+          match.scoreA = old.scoreA;
+          match.scoreB = old.scoreB;
+          match.status = "done";
+          match.winner = old.winner;
+        }
+      }
+    });
+
+    if (winnersMatch.status === "done" && winnersMatch.winner && losersMatch.status === "done" && losersMatch.winner) {
+      deciderMatch.playerA = matchLoser(winnersMatch);
+      deciderMatch.playerB = losersMatch.winner;
+      const old = saved.get("decider");
+      deciderMatch.status = "pending";
+      if (old?.status === "done" && old.winner && [deciderMatch.playerA, deciderMatch.playerB].includes(old.winner)) {
+        deciderMatch.scoreA = old.scoreA;
+        deciderMatch.scoreB = old.scoreB;
+        deciderMatch.status = "done";
+        deciderMatch.winner = old.winner;
+      }
+    }
+  });
+}
+
+function recalculateGroupedRound(roundIndex) {
+  recalculateGroupedRoundObject(state.rounds[roundIndex]);
+}
+
+function recalculateGroupedRoundsFrom(roundIndex) {
+  for (let index = roundIndex; index < state.rounds.length; index += 1) {
+    recalculateGroupedRound(index);
+  }
+}
+
+function buildGroupedRound(playerNames, roundIndex, mode = "random") {
+  const sourcePlayers = [...playerNames];
+  const shouldFill = mode !== "empty";
+  const slots = mode === "random"
+    ? shuffledItems(sourcePlayers)
+    : shouldFill
+    ? [...sourcePlayers]
+    : Array.from({ length: sourcePlayers.length }, () => null);
+  const matches = [];
+  const playersPerGroup = sourcePlayers.length <= 2 ? 2 : 4;
+  const groupCount = Math.max(1, Math.ceil(sourcePlayers.length / playersPerGroup));
+  const groups = [];
+
+  for (let groupIndex = 0; groupIndex < groupCount; groupIndex += 1) {
+    const groupPlayers = slots.slice(groupIndex * playersPerGroup, groupIndex * playersPerGroup + playersPerGroup);
+    const label = groupCount > 1 || roundIndex === 0 ? `Bảng ${groupLabel(groupIndex)}` : groupedRoundTitle(roundIndex, sourcePlayers.length);
+    groups.push({ index: groupIndex, label });
+    if (playersPerGroup === 2) {
+      matches.push(makeGroupedMatch(roundIndex, matches, groupIndex, label, "final", "Chung kết", groupPlayers[0] || null, groupPlayers[1] || null));
+      continue;
+    }
+    matches.push(makeGroupedMatch(roundIndex, matches, groupIndex, label, "opening", "Mở màn 1", groupPlayers[0] || null, groupPlayers[1] || null));
+    matches.push(makeGroupedMatch(roundIndex, matches, groupIndex, label, "opening", "Mở màn 2", groupPlayers[2] || null, groupPlayers[3] || null));
+    matches.push(makeGroupedMatch(roundIndex, matches, groupIndex, label, "winners", "Thắng gặp thắng", null, null));
+    matches.push(makeGroupedMatch(roundIndex, matches, groupIndex, label, "losers", "Thua gặp thua", null, null));
+    matches.push(makeGroupedMatch(roundIndex, matches, groupIndex, label, "decider", "Trận quyết định", null, null));
+  }
+
+  const round = {
+    title: groupedRoundTitle(roundIndex, sourcePlayers.length),
+    bracketGroup: "grouped",
+    formatType: "double",
+    formatLabel: "2 mạng",
+    sourcePlayers,
+    groups,
+    mode,
+    matches,
+  };
+  recalculateGroupedRoundObject(round);
+  return round;
+}
+
+function buildSingleEliminationRound(playerNames, roundIndex) {
+  const sourcePlayers = [...playerNames];
+  const matches = [];
+  for (let index = 0; index < sourcePlayers.length; index += 2) {
+    const playerA = sourcePlayers[index] || null;
+    const playerB = sourcePlayers[index + 1] || null;
+    const match = makeMatch(roundIndex, matches.length, playerA, playerB);
+    match.id = `single-r${roundIndex + 1}m${matches.length + 1}`;
+    match.bracketGroup = "single-elimination";
+    match.groupMatchLabel = `Trận ${matches.length + 1}`;
+    match.seedA = playerA;
+    match.seedB = playerB;
+    if (playerA && !playerB) {
+      match.scoreA = "W";
+      match.winner = playerA;
+      match.status = "done";
+      match.allowSingleAdvance = true;
+    }
+    matches.push(match);
+  }
+  return {
+    title: groupedRoundTitle(roundIndex, sourcePlayers.length),
+    bracketGroup: "single-elimination",
+    formatType: "single",
+    formatLabel: "Loại trực tiếp",
+    sourcePlayers,
+    matches,
   };
 }
 
@@ -1218,40 +1520,14 @@ function buildBracket(randomize = false) {
     return;
   }
 
-  if (state.players.length > 32) {
-    alert("Bản cơ bản hiện hỗ trợ tối đa 32 cơ thủ.");
-    return;
-  }
-  if (state.tournament.format === "double" && ![16, 24, 32].includes(state.players.length)) {
-    alert("Sơ đồ đối xứng hỗ trợ 16, 24 hoặc 32 cơ thủ.");
-    return;
-  }
-
   if (state.rounds.length && !confirm("Chia lại sơ đồ đấu sẽ xoá điểm và kết quả hiện tại. Tiếp tục?")) {
     return;
   }
 
   const bracketPlayers = randomize ? shuffledItems(state.players) : state.players;
-  const size = nextPowerOfTwo(bracketPlayers.length);
-  const titles = roundTitles(size);
-  let slots = [...bracketPlayers.map((player) => player.name)];
-  if (state.tournament.format !== "double") while (slots.length < size) slots.push(null);
-
-  state.rounds = state.tournament.format === "double"
-    ? buildDiagramBracket(slots)
-    : titles.map((title, roundIndex) => ({
-    title,
-    matches: Array.from({ length: size / 2 ** (roundIndex + 1) }, (_, matchIndex) => {
-      if (roundIndex === 0) {
-        return makeMatch(roundIndex, matchIndex, slots[matchIndex * 2], slots[matchIndex * 2 + 1]);
-      }
-
-      return makeMatch(roundIndex, matchIndex);
-    }),
-  }));
-
-  if (state.tournament.format === "double") recalculateDoubleBracket();
-  else autoAdvanceByes();
+  state.rounds = [buildGroupedRound(bracketPlayers.map((player) => player.name), 0, randomize ? "random" : "ordered")];
+  selectedDetailRoundIndex = 0;
+  selectedBracketRoundIndex = 0;
   saveState();
   renderAll();
 }
@@ -1312,16 +1588,44 @@ function isRoutedBracketMatch(match) {
 function updateMatchPlayers(roundIndex, matchIndex, playerA, playerB) {
   if (!isAdmin) return;
   const match = state.rounds[roundIndex]?.matches[matchIndex];
+  const round = state.rounds[roundIndex];
   if (!match || (playerA && playerB && playerA === playerB)) return;
+  if (isGroupedRound(round)) {
+    if (!["opening", "final"].includes(match.groupRole)) {
+      alert("Trận này sẽ tự lấy cơ thủ theo kết quả trận trước.");
+      return;
+    }
+    const eligible = new Set(round.sourcePlayers || []);
+    if ((playerA && !eligible.has(playerA)) || (playerB && !eligible.has(playerB))) {
+      alert("Cơ thủ này không thuộc danh sách của vòng đấu hiện tại.");
+      return;
+    }
+    const usedByOtherMatches = new Set();
+    (round.matches || []).forEach((item, index) => {
+      if (index === matchIndex) return;
+      if (!["opening", "final"].includes(item.groupRole)) return;
+      if (item.playerA) usedByOtherMatches.add(item.playerA);
+      if (item.playerB) usedByOtherMatches.add(item.playerB);
+    });
+    if ((playerA && usedByOtherMatches.has(playerA)) || (playerB && usedByOtherMatches.has(playerB))) {
+      alert("Cơ thủ này đã được xếp ở trận khác trong cùng vòng.");
+      return;
+    }
+  }
   if (playerA) match.manualPlayerA = playerA;
   else delete match.manualPlayerA;
   if (playerB) match.manualPlayerB = playerB;
   else delete match.manualPlayerB;
+  match.playerA = playerA;
+  match.playerB = playerB;
   match.scoreA = "";
   match.scoreB = "";
   match.winner = null;
   match.status = playerA && playerB ? "pending" : "waiting";
-  if (isRoutedBracketMatch(match)) recalculateDoubleBracket();
+  if (isGroupedRound(round)) {
+    state.rounds = state.rounds.slice(0, roundIndex + 1);
+    recalculateGroupedRound(roundIndex);
+  } else if (isRoutedBracketMatch(match)) recalculateDoubleBracket();
   else clearDownstream(roundIndex, matchIndex);
   saveState();
   renderAll();
@@ -1338,6 +1642,24 @@ function updateMatchScore(roundIndex, matchIndex, field, value) {
   }
 
   match[field] = value;
+  if (isGroupedRound(state.rounds[roundIndex])) {
+    const scoreA = Number(match.scoreA);
+    const scoreB = Number(match.scoreB);
+    if (match.status === "done" && match.playerA && match.playerB && Number.isFinite(scoreA) && Number.isFinite(scoreB) && scoreA !== scoreB && match.scoreA !== "" && match.scoreB !== "") {
+      state.rounds = state.rounds.slice(0, roundIndex + 1);
+      match.winner = scoreA > scoreB ? match.playerA : match.playerB;
+      recalculateGroupedRound(roundIndex);
+    } else if (match.status === "done") {
+      state.rounds = state.rounds.slice(0, roundIndex + 1);
+      match.winner = null;
+      match.status = match.playerA && match.playerB ? "pending" : "waiting";
+      recalculateGroupedRound(roundIndex);
+    }
+    saveState();
+    renderAll();
+    refreshOpenTournamentLiveScore(roundIndex, matchIndex);
+    return;
+  }
   if (match.bracketGroup === "record" || match.bracketGroup === "record-final") {
     if (match.status === "done") {
       state.rounds = state.rounds.slice(0, roundIndex + 1);
@@ -1402,7 +1724,14 @@ function updateMatchStatus(roundIndex, matchIndex, nextStatus) {
 
   const wasDone = match.status === "done";
   match.status = nextStatus;
-  if (match.bracketGroup === "record" || match.bracketGroup === "record-final") {
+  if (isGroupedRound(state.rounds[roundIndex])) {
+    if (wasDone || nextStatus === "done") state.rounds = state.rounds.slice(0, roundIndex + 1);
+    match.winner = null;
+    if (nextStatus === "done") {
+      match.winner = scoreA > scoreB ? match.playerA : match.playerB;
+    }
+    recalculateGroupedRound(roundIndex);
+  } else if (match.bracketGroup === "record" || match.bracketGroup === "record-final") {
     if (wasDone || nextStatus === "done") state.rounds = state.rounds.slice(0, roundIndex + 1);
     match.winner = null;
     if (nextStatus === "done") {
@@ -1492,6 +1821,54 @@ function diagramBracketLayout() {
   };
 }
 
+function groupedBracketLayout() {
+  const selectedRound = state.rounds[selectedBracketRoundIndex];
+  const selectedGroupCount = isGroupedRound(selectedRound) ? Math.max(1, selectedRound.groups?.length || 1) : 2;
+  const singleGroupFull = selectedGroupCount === 1;
+  const groupedCardWidth = singleGroupFull ? 320 : 270;
+  const baseGroupWidth = 270 * 2 + 120;
+  const groupHeight = cardHeight * 3 + 258;
+  const groupGapX = 76;
+  const groupGapY = 86;
+  const groupsPerRow = singleGroupFull ? 1 : 2;
+  const roundGapX = 110;
+  const roundWidth = baseGroupWidth * 2 + groupGapX;
+  const groupWidth = singleGroupFull ? roundWidth : baseGroupWidth;
+  const sideInset = singleGroupFull ? 42 : 24;
+  return {
+    groupWidth,
+    groupHeight,
+    groupGapX,
+    groupGapY,
+    groupsPerRow,
+    roundGapX,
+    roundWidth,
+    roundStepX: roundWidth + roundGapX,
+    top: topOffset + 64,
+    cardWidth: groupedCardWidth,
+    leftOpening: sideInset,
+    leftFinal: singleGroupFull ? groupWidth - groupedCardWidth - sideInset : sideInset + groupedCardWidth + 72,
+    roleY: {
+      opening0: 82,
+      opening1: 82 + cardHeight + 58,
+      losers: 82 + (cardHeight + 58) * 2,
+      winners: 82 + Math.round((cardHeight + 58) / 2),
+      decider: 82 + cardHeight + 58 + Math.round((cardHeight + 58) / 2),
+      final: 142,
+    },
+  };
+}
+
+function groupedGroupPosition(roundIndex, groupIndex) {
+  const layout = groupedBracketLayout();
+  const column = groupIndex % layout.groupsPerRow;
+  const row = Math.floor(groupIndex / layout.groupsPerRow);
+  return {
+    x: (roundIndex - bracketRenderRoundOffset) * layout.roundStepX + column * (layout.groupWidth + layout.groupGapX),
+    y: layout.top + row * (layout.groupHeight + layout.groupGapY),
+  };
+}
+
 function matchPosition(roundIndex, matchIndex) {
   const round = state.rounds[roundIndex];
   if (round?.bracketGroup?.startsWith("diagram-")) {
@@ -1528,6 +1905,42 @@ function matchPosition(roundIndex, matchIndex) {
     const center = topOffset + 70 + matchIndex * (cardHeight + 30) + cardHeight / 2;
     return { x: roundIndex * (cardWidth + gapX), y: center - cardHeight / 2, centerY: center };
   }
+  if (round?.bracketGroup === "single-elimination") {
+    const matchesPerRow = Math.max(1, Math.ceil((round.matches?.length || 1) / 2));
+    const localRoundIndex = roundIndex - bracketRenderRoundOffset;
+    const column = matchIndex % matchesPerRow;
+    const row = Math.floor(matchIndex / matchesPerRow);
+    const x = localRoundIndex * (cardWidth + gapX) + column * (cardWidth + 56);
+    const y = topOffset + 92 + row * (cardHeight + 76);
+    return { x, y, centerY: y + cardHeight / 2 };
+  }
+  if (isGroupedRound(round)) {
+    const layout = groupedBracketLayout();
+    const match = round.matches[matchIndex];
+    const groupIndex = Number.isInteger(match?.groupIndex) ? match.groupIndex : 0;
+    const groupPos = groupedGroupPosition(roundIndex, groupIndex);
+    const groupMatches = (round.matches || []).filter((item) => item.groupIndex === groupIndex);
+    const sameRoleIndex = groupMatches.filter((item) => item.groupRole === match?.groupRole).findIndex((item) => item === match);
+    let x = groupPos.x + layout.leftOpening;
+    let y = groupPos.y + layout.roleY.opening0;
+    if (match?.groupRole === "opening") {
+      x = groupPos.x + layout.leftOpening;
+      y = groupPos.y + (sameRoleIndex <= 0 ? layout.roleY.opening0 : layout.roleY.opening1);
+    } else if (match?.groupRole === "winners") {
+      x = groupPos.x + layout.leftFinal;
+      y = groupPos.y + layout.roleY.winners;
+    } else if (match?.groupRole === "losers") {
+      x = groupPos.x + layout.leftOpening;
+      y = groupPos.y + layout.roleY.losers;
+    } else if (match?.groupRole === "decider") {
+      x = groupPos.x + layout.leftFinal;
+      y = groupPos.y + layout.roleY.decider;
+    } else if (match?.groupRole === "final") {
+      x = groupPos.x + (layout.groupWidth - layout.cardWidth) / 2;
+      y = groupPos.y + layout.roleY.final;
+    }
+    return { x, y, centerY: y + cardHeight / 2 };
+  }
   if (round?.bracketGroup) {
     const layout = doubleBracketLayout();
     if (round.bracketGroup === "loser") {
@@ -1562,6 +1975,73 @@ function line(className, x, y, width, height) {
   el.style.width = `${Math.max(width, 1)}px`;
   el.style.height = `${Math.max(height, 1)}px`;
   return el;
+}
+
+function bracketConnector(canvas, className, from, to) {
+  const startX = to.x >= from.x ? from.x + from.width : from.x;
+  const startY = from.y + from.height / 2;
+  const endX = to.x >= from.x ? to.x : to.x + to.width;
+  const endY = to.y + to.height / 2;
+  const midX = (startX + endX) / 2;
+  canvas.append(line(className, Math.min(startX, midX), startY, Math.abs(midX - startX), 1));
+  canvas.append(line(className, midX, Math.min(startY, endY), 1, Math.abs(endY - startY)));
+  canvas.append(line(className, Math.min(midX, endX), endY, Math.abs(endX - midX), 1));
+}
+
+function renderGroupedBracketConnectors(canvas, round, roundIndex) {
+  if (!isGroupedRound(round) || !Array.isArray(round.groups)) return;
+  const layout = groupedBracketLayout();
+  round.groups.forEach((group) => {
+    const groupMatches = (round.matches || []).filter((match) => match.groupIndex === group.index);
+    const openings = groupMatches.filter((match) => match.groupRole === "opening");
+    const winnersMatch = groupMatches.find((match) => match.groupRole === "winners");
+    const losersMatch = groupMatches.find((match) => match.groupRole === "losers");
+    const deciderMatch = groupMatches.find((match) => match.groupRole === "decider");
+    if (openings.length < 2 || !winnersMatch || !losersMatch || !deciderMatch) return;
+    const rect = (match) => {
+      const pos = matchPosition(roundIndex, match.matchIndex);
+      return { x: pos.x, y: pos.y, width: layout.cardWidth, height: cardHeight };
+    };
+    bracketConnector(canvas, "grouped-flow win-path", rect(openings[0]), rect(winnersMatch));
+    bracketConnector(canvas, "grouped-flow win-path", rect(openings[1]), rect(winnersMatch));
+    bracketConnector(canvas, "grouped-flow drop-path", rect(openings[0]), rect(losersMatch));
+    bracketConnector(canvas, "grouped-flow drop-path", rect(openings[1]), rect(losersMatch));
+    bracketConnector(canvas, "grouped-flow drop-path", rect(winnersMatch), rect(deciderMatch));
+    bracketConnector(canvas, "grouped-flow win-path", rect(losersMatch), rect(deciderMatch));
+  });
+}
+
+function bracketRoundTabLabel(round, roundIndex) {
+  const title = String(round?.title || `Vòng ${roundIndex + 1}`).replace(/^Nhánh (thắng|thua) • /i, "");
+  return title || `Vòng ${roundIndex + 1}`;
+}
+
+function resetBracketScroll() {
+  document.querySelector("#bracketCanvas")?.closest(".bracket-scroll")?.scrollTo({ left: 0, top: 0 });
+}
+
+function renderBracketRoundTabs() {
+  const tabs = document.querySelector("#bracketRoundTabs");
+  if (!tabs) return;
+  if (!state.rounds.length) {
+    tabs.innerHTML = "";
+    return;
+  }
+  selectedBracketRoundIndex = Math.min(Math.max(0, selectedBracketRoundIndex), state.rounds.length - 1);
+  tabs.innerHTML = state.rounds
+    .map((round, roundIndex) => `
+      <button class="round-tab${roundIndex === selectedBracketRoundIndex ? " active" : ""}" data-bracket-round-tab="${roundIndex}" type="button">
+        ${escapeHtml(bracketRoundTabLabel(round, roundIndex))}
+      </button>
+    `)
+    .join("");
+  tabs.querySelectorAll("[data-bracket-round-tab]").forEach((button) => {
+    button.addEventListener("click", () => {
+      selectedBracketRoundIndex = Number(button.dataset.bracketRoundTab) || 0;
+      renderBracket();
+      resetBracketScroll();
+    });
+  });
 }
 
 function applyBracketScale() {
@@ -1737,6 +2217,80 @@ function bindBracketFit() {
   window.addEventListener("resize", applyBracketScale);
 }
 
+function bindDetailTreeNavigation(scroll, canvas) {
+  if (!scroll || !canvas || scroll.dataset.navigationBound === "true") return;
+  scroll.dataset.navigationBound = "true";
+  const fitButton = scroll.querySelector("[data-detail-bracket-fit]");
+  let scale = Number.parseFloat(canvas.style.zoom) || 1;
+  let dragging = false;
+  let dragged = false;
+  let startX = 0;
+  let startY = 0;
+  let startLeft = 0;
+  let startTop = 0;
+
+  const updateLabel = () => {
+    if (fitButton) fitButton.textContent = `Thu vừa màn hình • ${Math.round(scale * 100)}%`;
+  };
+  const zoomAt = (nextScale, clientX, clientY) => {
+    const oldScale = scale;
+    scale = Math.min(2.5, Math.max(0.25, nextScale));
+    const rect = scroll.getBoundingClientRect();
+    const pointerX = clientX - rect.left;
+    const pointerY = clientY - rect.top;
+    const contentX = (scroll.scrollLeft + pointerX) / oldScale;
+    const contentY = (scroll.scrollTop + pointerY) / oldScale;
+    canvas.style.zoom = String(scale);
+    scroll.scrollLeft = contentX * scale - pointerX;
+    scroll.scrollTop = contentY * scale - pointerY;
+    updateLabel();
+  };
+
+  fitButton?.addEventListener("click", () => {
+    canvas.style.zoom = "1";
+    const naturalWidth = Math.max(canvas.scrollWidth, Number.parseFloat(canvas.style.minWidth) || 1);
+    scale = Math.min(1, Math.max(0.25, (scroll.clientWidth - 8) / naturalWidth));
+    canvas.style.zoom = String(scale);
+    scroll.scrollTo({ left: 0, top: 0 });
+    updateLabel();
+  });
+  scroll.addEventListener("wheel", (event) => {
+    event.preventDefault();
+    zoomAt(scale + (event.deltaY < 0 ? 0.1 : -0.1), event.clientX, event.clientY);
+  }, { passive: false });
+  scroll.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0 || event.target.closest("input, button, select, textarea, a")) return;
+    dragging = true;
+    dragged = false;
+    startX = event.clientX;
+    startY = event.clientY;
+    startLeft = scroll.scrollLeft;
+    startTop = scroll.scrollTop;
+    scroll.setPointerCapture?.(event.pointerId);
+    scroll.classList.add("is-dragging");
+  });
+  scroll.addEventListener("pointermove", (event) => {
+    if (!dragging) return;
+    const deltaX = event.clientX - startX;
+    const deltaY = event.clientY - startY;
+    if (!dragged && Math.hypot(deltaX, deltaY) < 5) return;
+    dragged = true;
+    scroll.dataset.didDrag = "true";
+    scroll.scrollLeft = startLeft - deltaX;
+    scroll.scrollTop = startTop - deltaY;
+  });
+  const stopDragging = (event) => {
+    if (!dragging) return;
+    dragging = false;
+    scroll.releasePointerCapture?.(event.pointerId);
+    scroll.classList.remove("is-dragging");
+    setTimeout(() => delete scroll.dataset.didDrag, 0);
+  };
+  scroll.addEventListener("pointerup", stopDragging);
+  scroll.addEventListener("pointercancel", stopDragging);
+  updateLabel();
+}
+
 function renderBracket() {
   const canvas = document.querySelector("#bracketCanvas");
   const title = document.querySelector("#bracketTitle");
@@ -1744,9 +2298,12 @@ function renderBracket() {
     return;
   }
 
+  renderBracketRoundTabs();
   canvas.innerHTML = "";
   canvas.style.zoom = "1";
-  title.textContent = state.tournament.name || "Ma Buu Billiards Tournament";
+  if (title) {
+    title.textContent = state.tournament.name || "Ma Buu Billiards Tournament";
+  }
   document.documentElement.style.setProperty("--card-h", `${cardHeight}px`);
   document.documentElement.style.setProperty("--row-h", `${rowHeight}px`);
 
@@ -1763,21 +2320,38 @@ function renderBracket() {
   const isDoubleBracket = state.rounds.some((round) => round.bracketGroup === "winner" || round.bracketGroup === "loser" || round.bracketGroup === "final");
   const isRecordBracket = state.rounds.some((round) => round.bracketGroup === "record" || round.bracketGroup === "record-final");
   const isDiagramBracket = state.rounds.some((round) => round.bracketGroup?.startsWith("diagram-"));
+  const isGroupedBracket = state.rounds.some((round) => isGroupedRound(round));
+  const selectedVisibleRound = state.rounds[selectedBracketRoundIndex];
+  const isSingleEliminationView = isGroupedBracket && selectedVisibleRound?.bracketGroup === "single-elimination";
   const layout = isDoubleBracket ? doubleBracketLayout() : null;
   const diagramLayout = isDiagramBracket ? diagramBracketLayout() : null;
+  const groupedLayout = isGroupedBracket ? groupedBracketLayout() : null;
+  const visibleRoundIndices = isGroupedBracket ? [selectedBracketRoundIndex] : state.rounds.map((_, index) => index);
+  bracketRenderRoundOffset = isGroupedBracket ? selectedBracketRoundIndex : 0;
   canvas.classList.toggle("double-bracket", isDoubleBracket);
   canvas.classList.toggle("record-bracket", isRecordBracket);
   canvas.classList.toggle("diagram-bracket", isDiagramBracket);
+  canvas.classList.toggle("grouped-bracket", isGroupedBracket && isGroupedRound(selectedVisibleRound));
+  canvas.classList.toggle("single-elimination-bracket", isSingleEliminationView);
+  const singleMatchesPerRow = isSingleEliminationView ? Math.max(1, Math.ceil((selectedVisibleRound.matches?.length || 1) / 2)) : 0;
   canvas.style.minWidth = isDiagramBracket
     ? `${diagramLayout.columns * diagramLayout.stepX + cardWidth}px`
     : isDoubleBracket
     ? `${(layout.finalColumn + 2) * layout.stepX + cardWidth}px`
+    : isSingleEliminationView
+    ? `${singleMatchesPerRow * cardWidth + Math.max(0, singleMatchesPerRow - 1) * 56}px`
+    : isGroupedBracket
+    ? `${groupedLayout.roundWidth}px`
     : `${state.rounds.length * cardWidth + (state.rounds.length - 1) * gapX}px`;
   const doubleHeight = isDoubleBracket ? layout.loserTop + layout.loserHeight + 110 : 0;
   const recordHeight = isRecordBracket
     ? topOffset + Math.max(...state.rounds.map((round) => round.matches.length)) * (cardHeight + 30) + 70
     : 0;
-  canvas.style.height = `${Math.max(540, doubleHeight, recordHeight, diagramLayout?.height || 0, topOffset + rowHeight * state.rounds[0].matches.length + 90)}px`;
+  const groupedHeight = isGroupedBracket
+    ? groupedLayout.top + Math.max(...visibleRoundIndices.map((roundIndex) => Math.ceil(Math.max(1, state.rounds[roundIndex]?.groups?.length || 1) / groupedLayout.groupsPerRow))) * (groupedLayout.groupHeight + groupedLayout.groupGapY) + 24
+    : 0;
+  const singleEliminationHeight = isSingleEliminationView ? topOffset + 92 + Math.min(2, selectedVisibleRound.matches?.length || 1) * (cardHeight + 76) + 32 : 0;
+  canvas.style.height = `${Math.max(540, doubleHeight, recordHeight, groupedHeight, singleEliminationHeight, diagramLayout?.height || 0, topOffset + rowHeight * state.rounds[0].matches.length + 90)}px`;
 
   if (isDoubleBracket) {
     const winnerZone = document.createElement("div");
@@ -1805,8 +2379,28 @@ function renderBracket() {
     recordGuide.innerHTML = `<strong>BỐC CẶP NGẪU NHIÊN • 2 MẠNG</strong><span>Mỗi vòng bốc lại trong số người còn sống. Thua đủ 2 trận bị loại; còn 2 người sẽ đấu chung kết.</span>`;
     canvas.append(recordGuide);
   }
+  if (isGroupedBracket) {
+    visibleRoundIndices.forEach((roundIndex) => {
+      const round = state.rounds[roundIndex];
+      if (!isGroupedRound(round) || !Array.isArray(round.groups) || !round.groups.length) return;
+      round.groups.forEach((group) => {
+        const groupMatches = (round.matches || []).filter((match) => match.groupIndex === group.index);
+        if (!groupMatches.length) return;
+        const groupPos = groupedGroupPosition(roundIndex, group.index);
+        const frame = document.createElement("div");
+        frame.className = "grouped-bracket-frame";
+        frame.style.left = `${groupPos.x}px`;
+        frame.style.top = `${groupPos.y}px`;
+        frame.style.width = `${groupedLayout.groupWidth}px`;
+        frame.style.height = `${groupedLayout.groupHeight}px`;
+        frame.innerHTML = `<strong>${escapeHtml(group.label)}</strong>`;
+        canvas.append(frame);
+      });
+    });
+  }
 
-  state.rounds.forEach((round, roundIndex) => {
+  visibleRoundIndices.forEach((roundIndex) => {
+    const round = state.rounds[roundIndex];
     const roundTitle = document.createElement("div");
     roundTitle.className = "round-title";
     roundTitle.textContent = round.title.replace(/^Nhánh (thắng|thua) • /i, "");
@@ -1815,9 +2409,18 @@ function renderBracket() {
     if (round.bracketGroup === "loser") roundTitle.style.top = `${layout.loserTop - 30}px`;
     if (round.bracketGroup === "final") roundTitle.style.top = "18px";
     if (round.bracketGroup === "record" || round.bracketGroup === "record-final") roundTitle.style.top = "54px";
+    if (isGroupedRound(round)) {
+      roundTitle.style.left = "0px";
+      roundTitle.style.top = "54px";
+      roundTitle.style.width = `${groupedLayout.roundWidth}px`;
+    }
     if (round.bracketGroup === "diagram-loser") roundTitle.style.top = `${diagramLayout.loserTop - 42}px`;
     if (round.bracketGroup === "diagram-grand") roundTitle.style.top = `${titlePos.y - 48}px`;
     canvas.append(roundTitle);
+
+    if (isGroupedRound(round)) {
+      renderGroupedBracketConnectors(canvas, round, roundIndex);
+    }
 
     round.matches.forEach((match, matchIndex) => {
       const pos = matchPosition(roundIndex, matchIndex);
@@ -1832,9 +2435,12 @@ function renderBracket() {
       el.dataset.match = matchIndex;
       el.style.left = `${pos.x}px`;
       el.style.top = `${pos.y}px`;
+      if (isGroupedRound(round)) {
+        el.style.width = `${groupedLayout.cardWidth}px`;
+      }
       el.innerHTML = `
         <div class="match-meta">
-          <span>${match.time || `Bàn ${String(match.table).padStart(2, "0")}`}</span>
+          <span>${match.groupLabel ? `${escapeHtml(match.groupLabel)} • ` : ""}${match.groupMatchLabel ? `${escapeHtml(match.groupMatchLabel)} • ` : ""}${match.time || `Bàn ${String(match.table).padStart(2, "0")}`}</span>
           <button class="match-camera" data-open-match-camera="${Number(match.table) || matchIndex + 1}" type="button" ${isLiveMatch ? "" : "disabled"} title="${isLiveMatch ? "Mo camera EZVIZ" : "Chi mo camera khi tran dang dien ra"}">EZVIZ</button>
           ${matchStatusControl(match, roundIndex, matchIndex)}
         </div>
@@ -1926,6 +2532,13 @@ function bindTabs() {
       selectedCameraView = options.cameraView || "lan";
     }
     topTabs.forEach((button) => button.classList.toggle("active", button.dataset.tab === tabName));
+    document.querySelectorAll(".tournament-quick-nav [data-home-tab]").forEach((button) => {
+      button.classList.toggle("active", button.dataset.homeTab === tabName);
+    });
+    const tournamentTabs = new Set(["home", "schedule", "tournamentRanking", "bracket"]);
+    document.querySelectorAll(".page-home-only").forEach((element) => {
+      element.hidden = !tournamentTabs.has(tabName);
+    });
     panels.forEach((panel) => {
       panel.hidden = panel.id !== tabName;
     });
@@ -1966,7 +2579,14 @@ function bindTabs() {
   });
 
   document.querySelectorAll("[data-home-tab]").forEach((button) => {
-    button.addEventListener("click", () => activate(button.dataset.homeTab));
+    button.addEventListener("click", () => {
+      if (button.dataset.homeDetail) {
+        selectedTournamentId = "current";
+        selectedTournamentDetailTab = button.dataset.homeDetail;
+        selectedDetailRoundIndex = 0;
+      }
+      activate(button.dataset.homeTab);
+    });
   });
 
   document.querySelector("#quickCreateTournament")?.addEventListener("click", () => {
@@ -1976,6 +2596,7 @@ function bindTabs() {
     }
     activate("tournaments");
   });
+  document.querySelector("[data-open-create-tournament]")?.addEventListener("click", openCreateTournamentModal);
 }
 
 function keepActivePanelVisible() {
@@ -2203,12 +2824,20 @@ function renderDetailInfo(entry) {
             <input name="date" type="date" value="${escapeHtml(tournament.date || "")}" />
           </label>
           <label>
-            Thể thức
-            <select name="format">
-              <option value="single"${(tournament.format || "single") === "single" ? " selected" : ""}>Loại trực tiếp</option>
-              <option value="double"${tournament.format === "double" ? " selected" : ""}>Sơ đồ 2 mạng đối xứng (16/24/32 cơ thủ)</option>
-              <option value="round-robin"${tournament.format === "round-robin" ? " selected" : ""}>Vòng tròn</option>
-            </select>
+            Hạng giải
+            <input name="rank" type="text" value="${escapeHtml(tournament.rank || "")}" placeholder="Ví dụ: G, H hoặc Mở rộng" />
+          </label>
+          <label>
+            Đơn vị tổ chức
+            <input name="organizer" type="text" value="${escapeHtml(tournament.organizer || "")}" placeholder="Ma Buu Billiards" />
+          </label>
+          <label>
+            Địa điểm tổ chức
+            <input name="location" type="text" value="${escapeHtml(tournament.location || "")}" placeholder="Tên CLB hoặc địa chỉ thi đấu" />
+          </label>
+          <label>
+            Thông tin khác
+            <textarea name="description" rows="5" placeholder="Nhập giới thiệu, điều lệ hoặc ghi chú của giải...">${escapeHtml(tournament.description || "")}</textarea>
           </label>
           <button class="primary-action" type="submit">Lưu thông tin</button>
         </form>
@@ -2227,7 +2856,6 @@ function renderDetailInfo(entry) {
       <article><small>Ngày thi đấu</small><strong>${escapeHtml(tournament.date || "Chưa chọn")}</strong></article>
       <article><small>Cơ thủ</small><strong>${players.length}</strong></article>
       <article><small>Trận đã xong</small><strong>${doneMatches}/${matches.length || 0}</strong></article>
-      <article><small>Thể thức</small><strong>${tournament.format === "double" ? "Sơ đồ 2 mạng đối xứng" : "Loại trực tiếp"}</strong></article>
       <article><small>Trạng thái</small><strong>${matches.length && doneMatches === matches.length ? "Hoàn tất" : "Đang diễn ra"}</strong></article>
     </div>
   `;
@@ -2416,83 +3044,142 @@ function renderDetailHistory(entry) {
   `;
 }
 
+function renderDetailBracketStage(round, roundIndex, group = null) {
+  const matches = group
+    ? (round.matches || []).filter((match) => match.groupIndex === group.index)
+    : (round.matches || []);
+  const title = group ? `${round.title} • ${group.label}` : round.title;
+  return `
+    <section class="bracket-stage">
+      <h4>${escapeHtml(title)}</h4>
+      ${matches
+        .map((match) => {
+          const aWon = match.winner && match.winner === match.playerA;
+          const bWon = match.winner && match.winner === match.playerB;
+          const isLiveMatch = match.playerA && match.playerB && match.status === "live";
+          return `
+          <button class="bracket-mini-match${match.status === "done" ? " done" : ""}" data-open-match-camera="${Number(match.table) || match.matchIndex + 1}" type="button" ${isAdmin || isLiveMatch ? "" : "disabled"}>
+            <span class="sr-only" data-live-match-info
+              data-label="${escapeHtml(match.groupMatchLabel || `Trận ${match.matchIndex + 1}`)}"
+              data-status="${matchStatusLabel(match.status)}"
+              data-status-value="${escapeHtml(match.status || "pending")}"
+              data-player-a="${escapeHtml(match.playerA || "TBD")}"
+              data-score-a="${escapeHtml(match.scoreA || "-")}"
+              data-player-b="${escapeHtml(match.playerB || "TBD")}"
+              data-score-b="${escapeHtml(match.scoreB || "-")}"
+              data-winner-a="${aWon ? "true" : "false"}"
+              data-winner-b="${bWon ? "true" : "false"}"
+              data-round-index="${roundIndex}"
+              data-match-index="${match.matchIndex}"></span>
+            <div class="mini-match-meta">
+              <span>${escapeHtml(match.groupMatchLabel || `Trận ${match.matchIndex + 1}`)}</span>
+              <small>Bàn ${String(match.table || match.matchIndex + 1).padStart(2, "0")}</small>
+            </div>
+            <div class="mini-player${aWon ? " winner" : ""}">
+              <strong>${escapeHtml(match.playerA || "TBD")}</strong>
+              <span>${escapeHtml(match.scoreA || "-")}</span>
+            </div>
+            <div class="mini-player${bWon ? " winner" : ""}">
+              <strong>${escapeHtml(match.playerB || "TBD")}</strong>
+              <span>${escapeHtml(match.scoreB || "-")}</span>
+            </div>
+          </button>
+        `;
+        })
+        .join("")}
+    </section>
+  `;
+}
+
 function renderDetailBracket(entry) {
   const rounds = Array.isArray(entry.rounds) ? entry.rounds : [];
   const players = Array.isArray(entry.players) ? entry.players : [];
   const canManageBracket = isAdmin && entry.isCurrent;
+  if (selectedDetailRoundIndex >= rounds.length) {
+    selectedDetailRoundIndex = Math.max(0, rounds.length - 1);
+  }
+  const addRoundStatus = canManageBracket ? canAddGroupedRound() : { ok: false, message: "" };
+  const canCreateEmptyBracket = canManageBracket && players.length >= 2;
+  const selectedRound = rounds[selectedDetailRoundIndex];
+  const selectedRoundMarkup = selectedRound
+    ? isGroupedRound(selectedRound) && Array.isArray(selectedRound.groups) && selectedRound.groups.length
+      ? selectedRound.groups.map((group) => renderDetailBracketStage(selectedRound, selectedDetailRoundIndex, group)).join("")
+      : renderDetailBracketStage(selectedRound, selectedDetailRoundIndex)
+    : "";
+  const visiblePlayerNames = selectedRound?.sourcePlayers?.length
+    ? selectedRound.sourcePlayers
+    : players.map((player) => player.name);
 
   return `
-    ${
-      canManageBracket
-        ? `
-          <div class="data-section wide-section inline-section bracket-draw-panel">
-            <div class="section-heading">
-              <div>
-                <p>DANH SÁCH CƠ THỦ</p>
-                <h2>${players.length} cơ thủ đã đăng ký</h2>
+    <div class="round-tab-shell">
+      <div class="round-tab-header">
+        ${
+          rounds.length
+            ? `
+              <div class="round-tab-list" role="tablist" aria-label="Các vòng đấu">
+                ${rounds.map((round, roundIndex) => `
+                  <button class="round-tab${roundIndex === selectedDetailRoundIndex ? " active" : ""}" data-detail-round-tab="${roundIndex}" type="button">
+                    ${escapeHtml(round.title || `Vòng ${roundIndex + 1}`)}
+                  </button>
+                `).join("")}
               </div>
-              <button class="primary-action" data-randomize-bracket type="button">Chia bảng ngẫu nhiên</button>
-            </div>
-            <div class="registered-player-grid">
+            `
+            : `<div class="round-tab-list"><button class="round-tab active" type="button">Sơ đồ đấu</button></div>`
+        }
+        ${
+          canManageBracket
+            ? `<div class="round-tab-actions">
+                <button class="secondary-action round-add-action" data-detail-add-round type="button" ${addRoundStatus.ok ? "" : "disabled"} title="${escapeHtml(addRoundStatus.message)}">Thêm vòng đấu</button>
+              </div>`
+            : ""
+        }
+      </div>
+      ${
+        canManageBracket
+          ? `<div class="round-tab-secondary-actions">
+              <button class="secondary-action round-test-action" data-detail-fill-test-results type="button" ${rounds.length ? "" : "disabled"}>Điền kết quả test</button>
+              <button class="danger-action round-delete-action" data-detail-delete-round type="button" ${rounds.length ? "" : "disabled"}>Xóa vòng hiện tại</button>
+            </div>`
+          : ""
+      }
+      ${
+        canManageBracket
+          ? `
+            <div class="data-section wide-section inline-section bracket-draw-panel round-tab-player-panel">
+              <div class="section-heading">
+                <div>
+                  <p>DANH SÁCH CƠ THỦ</p>
+                  <h2>${visiblePlayerNames.length} cơ thủ</h2>
+                </div>
+                <div class="detail-bracket-actions">
+                  <button class="primary-action" data-randomize-bracket type="button">Chia bảng ngẫu nhiên</button>
+                  <button class="primary-action" data-detail-create-empty-bracket type="button" ${canCreateEmptyBracket ? "" : "disabled"} title="${canCreateEmptyBracket ? "Tạo bảng trống cho vòng đang chọn." : "Cần ít nhất 2 cơ thủ để tạo bảng trống."}">Tạo bảng trống</button>
+                </div>
+              </div>
               ${
-                players.length
-                  ? players.map((player, index) => `<span>${index + 1}. ${escapeHtml(player.name)}</span>`).join("")
-                  : `<span>Chưa có cơ thủ đã đăng ký</span>`
+                rounds.length
+                  ? `<div class="form-status" data-type="${addRoundStatus.ok ? "ok" : ""}">${escapeHtml(addRoundStatus.message || "Tạo vòng bảng để bắt đầu sơ đồ đấu.")}</div>`
+                  : ""
               }
+              <div class="registered-player-grid">
+                ${
+                  visiblePlayerNames.length
+                    ? visiblePlayerNames.map((name, index) => `<span>${index + 1}. ${escapeHtml(name)}</span>`).join("")
+                    : `<span>Chưa có cơ thủ</span>`
+                }
+              </div>
             </div>
-          </div>
-        `
-        : ""
-    }
-    <div class="history-rounds detail-rounds">
+          `
+          : ""
+      }
       ${
         rounds.length
-          ? rounds
-              .map(
-                (round, roundIndex) => `
-                  <section class="bracket-stage">
-                    <h4>${escapeHtml(round.title)}</h4>
-                    ${(round.matches || [])
-                      .map(
-                        (match) => {
-                          const aWon = match.winner && match.winner === match.playerA;
-                          const bWon = match.winner && match.winner === match.playerB;
-                          const isLiveMatch = match.playerA && match.playerB && match.status === "live";
-                          return `
-                          <button class="bracket-mini-match${match.status === "done" ? " done" : ""}" data-open-match-camera="${Number(match.table) || match.matchIndex + 1}" type="button" ${isLiveMatch ? "" : "disabled"}>
-                            <span class="sr-only" data-live-match-info
-                              data-label="Trận ${match.matchIndex + 1}"
-                              data-status="${matchStatusLabel(match.status)}"
-                              data-status-value="${escapeHtml(match.status || "pending")}"
-                              data-player-a="${escapeHtml(match.playerA || "TBD")}"
-                              data-score-a="${escapeHtml(match.scoreA || "-")}"
-                              data-player-b="${escapeHtml(match.playerB || "TBD")}"
-                              data-score-b="${escapeHtml(match.scoreB || "-")}"
-                              data-winner-a="${aWon ? "true" : "false"}"
-                              data-winner-b="${bWon ? "true" : "false"}"
-                              data-round-index="${roundIndex}"
-                              data-match-index="${match.matchIndex}"></span>
-                            <div class="mini-match-meta">
-                              <span>Trận ${match.matchIndex + 1}</span>
-                              <small>Bàn ${String(match.table || match.matchIndex + 1).padStart(2, "0")}</small>
-                            </div>
-                            <div class="mini-player${aWon ? " winner" : ""}">
-                              <strong>${escapeHtml(match.playerA || "TBD")}</strong>
-                              <span>${escapeHtml(match.scoreA || "-")}</span>
-                            </div>
-                            <div class="mini-player${bWon ? " winner" : ""}">
-                              <strong>${escapeHtml(match.playerB || "TBD")}</strong>
-                              <span>${escapeHtml(match.scoreB || "-")}</span>
-                            </div>
-                          </button>
-                        `;
-                        },
-                      )
-                      .join("")}
-                  </section>
-                `,
-              )
-              .join("")
+          ? `<div class="bracket-scroll detail-tree-scroll" aria-label="Sơ đồ cây thi đấu có thể cuộn ngang">
+              <button class="bracket-fit-toggle" data-detail-bracket-fit type="button">Thu vừa màn hình</button>
+              <div class="bracket" id="detailBracketCanvas"></div>
+            </div>`
+          : rounds.length
+          ? `<div class="history-rounds detail-rounds round-tab-panel">${selectedRoundMarkup}</div>`
           : `<div class="empty-state">Chưa có sơ đồ đấu cho giải này.</div>`
       }
     </div>
@@ -2533,6 +3220,7 @@ function renderTournamentDirectory() {
     button.addEventListener("click", () => {
       selectedTournamentId = button.dataset.tournamentId;
       selectedTournamentDetailTab = "info";
+      selectedDetailRoundIndex = 0;
       renderTournamentDirectory();
     });
   });
@@ -2540,7 +3228,7 @@ function renderTournamentDirectory() {
   const selectedEntry = entries.find((entry) => entry.id === selectedTournamentId) || entries[0];
   const detailTabs = isAdmin
     ? [
-        ["info", "Thông tin"],
+        ["info", "Thiết lập giải đấu"],
         ["players", "Thêm cơ thủ"],
         ["requests", "Yêu cầu"],
         ["history", "Lịch sử đấu"],
@@ -2584,6 +3272,48 @@ function renderTournamentDirectory() {
     <div class="detail-panel">${detailContent[selectedTournamentDetailTab] || detailContent.info}</div>
   `;
 
+  const detailTreeCanvas = reader.querySelector("#detailBracketCanvas");
+  if (detailTreeCanvas) {
+    selectedBracketRoundIndex = selectedDetailRoundIndex;
+    const originalTournament = state.tournament;
+    const originalPlayers = state.players;
+    const originalRounds = state.rounds;
+    if (!selectedEntry.isCurrent) {
+      state.tournament = selectedEntry.tournament || createDefaultState().tournament;
+      state.players = Array.isArray(selectedEntry.players) ? selectedEntry.players : [];
+      state.rounds = Array.isArray(selectedEntry.rounds) ? selectedEntry.rounds : [];
+    }
+    try {
+      renderBracket();
+    } finally {
+      state.tournament = originalTournament;
+      state.players = originalPlayers;
+      state.rounds = originalRounds;
+    }
+    const sourceCanvas = document.querySelector("#bracketCanvas");
+    if (sourceCanvas) {
+      detailTreeCanvas.innerHTML = sourceCanvas.innerHTML;
+      detailTreeCanvas.style.cssText = sourceCanvas.style.cssText;
+    }
+    bindDetailTreeNavigation(detailTreeCanvas.closest(".bracket-scroll"), detailTreeCanvas);
+    if (selectedEntry.isCurrent) {
+      detailTreeCanvas.querySelectorAll(".score-input").forEach((input) => {
+        input.addEventListener("change", () => {
+          updateMatchScore(Number(input.dataset.round), Number(input.dataset.match), input.dataset.field, input.value.trim());
+        });
+      });
+      detailTreeCanvas.querySelectorAll(".match-status-select").forEach((select) => {
+        select.addEventListener("change", () => {
+          updateMatchStatus(Number(select.dataset.round), Number(select.dataset.match), select.value);
+        });
+      });
+    } else {
+      detailTreeCanvas.querySelectorAll("input, select, button").forEach((control) => {
+        control.disabled = true;
+      });
+    }
+  }
+
   reader.querySelectorAll("[data-detail-tab]").forEach((button) => {
     button.addEventListener("click", () => {
       selectedTournamentDetailTab = button.dataset.detailTab;
@@ -2594,18 +3324,32 @@ function renderTournamentDirectory() {
       renderTournamentDirectory();
     });
   });
+  reader.querySelectorAll("[data-detail-round-tab]").forEach((button) => {
+    button.addEventListener("click", () => {
+      selectedDetailRoundIndex = Number(button.dataset.detailRoundTab) || 0;
+      selectedBracketRoundIndex = selectedDetailRoundIndex;
+      selectedTournamentDetailTab = "bracket";
+      renderTournamentDirectory();
+    });
+  });
 
   reader.querySelector("#directoryTournamentForm")?.addEventListener("submit", submitDirectoryTournamentForm);
   reader.querySelector("#directoryPlayerForm")?.addEventListener("submit", submitDirectoryPlayerForm);
   reader.querySelector("#directoryRegistrationForm")?.addEventListener("submit", submitDirectoryRegistrationRequest);
   reader.querySelector("[data-delete-tournament]")?.addEventListener("click", deleteSelectedTournament);
   reader.querySelector("[data-randomize-bracket]")?.addEventListener("click", () => {
-    buildBracket(true);
-    selectedTournamentDetailTab = "bracket";
-    if (state.rounds.length) {
-      setAdminNotice("Đã chia bảng đấu ngẫu nhiên.", "ok");
-    }
+    rebuildSelectedGroupedRound("random");
   });
+  reader.querySelector("[data-detail-add-round]")?.addEventListener("click", () => {
+    openAddRoundModal();
+  });
+  reader.querySelector("[data-detail-fill-test-results]")?.addEventListener("click", () => {
+    fillSelectedRoundTestResults();
+  });
+  reader.querySelector("[data-detail-create-empty-bracket]")?.addEventListener("click", () => {
+    createEmptyGroupedBracketFromDetail();
+  });
+  reader.querySelector("[data-detail-delete-round]")?.addEventListener("click", deleteSelectedDetailRound);
   reader.querySelectorAll("[data-open-match-camera]").forEach((button) => {
     button.addEventListener("click", () => {
       const liveInfo = button.querySelector("[data-live-match-info]");
@@ -2622,6 +3366,10 @@ function renderTournamentDirectory() {
         roundIndex: Number(liveInfo.dataset.roundIndex),
         matchIndex: Number(liveInfo.dataset.matchIndex),
       } : { label: button.querySelector(".mini-match-meta span")?.textContent.trim() || "" };
+      if (isAdmin && selectedEntry.isCurrent && Number.isInteger(matchInfo.roundIndex) && Number.isInteger(matchInfo.matchIndex)) {
+        openMatchPairEditor(matchInfo.roundIndex, matchInfo.matchIndex);
+        return;
+      }
       if (!canOpenMatchLive(matchInfo)) {
         return;
       }
@@ -2644,17 +3392,140 @@ function renderTournamentDirectory() {
   });
 }
 
+function addGroupedRoundFromDetail(mode, reader) {
+  const status = canAddGroupedRound();
+  if (!status.ok) {
+    setAdminNotice(status.message, "error");
+    renderTournamentDirectory();
+    return;
+  }
+  state.rounds.push(buildGroupedRound(nextGroupedRoundPlayers(), state.rounds.length, mode));
+  saveState();
+  selectedTournamentDetailTab = "bracket";
+  selectedDetailRoundIndex = state.rounds.length - 1;
+  selectedBracketRoundIndex = selectedDetailRoundIndex;
+  renderAll();
+  setAdminNotice(`Đã thêm ${state.rounds[state.rounds.length - 1].title}.`, "ok");
+}
+
+function setTestMatchResult(match, preferredSlot = "A") {
+  if (!match?.playerA || !match.playerB) return false;
+  const winnerIsA = preferredSlot !== "B";
+  match.scoreA = winnerIsA ? "5" : "2";
+  match.scoreB = winnerIsA ? "2" : "5";
+  match.winner = winnerIsA ? match.playerA : match.playerB;
+  match.status = "done";
+  return true;
+}
+
+function fillSelectedRoundTestResults() {
+  const roundIndex = Math.min(selectedDetailRoundIndex, state.rounds.length - 1);
+  const round = state.rounds[roundIndex];
+  if (!isGroupedRound(round)) {
+    setAdminNotice("Vòng này không phải dạng bảng để điền kết quả test.", "error");
+    return;
+  }
+
+  state.rounds = state.rounds.slice(0, roundIndex + 1);
+  (round.groups || []).forEach((group) => {
+    const groupMatches = round.matches.filter((match) => match.groupIndex === group.index);
+    const openings = groupMatches.filter((match) => match.groupRole === "opening");
+    const winnersMatch = groupMatches.find((match) => match.groupRole === "winners");
+    const losersMatch = groupMatches.find((match) => match.groupRole === "losers");
+    const deciderMatch = groupMatches.find((match) => match.groupRole === "decider");
+    const finalMatch = groupMatches.find((match) => match.groupRole === "final");
+
+    if (finalMatch) {
+      setTestMatchResult(finalMatch, "A");
+      return;
+    }
+
+    openings.forEach((match, index) => {
+      setTestMatchResult(match, index % 2 === 0 ? "A" : "B");
+    });
+    recalculateGroupedRound(roundIndex);
+    setTestMatchResult(winnersMatch, "A");
+    setTestMatchResult(losersMatch, "A");
+    recalculateGroupedRound(roundIndex);
+    setTestMatchResult(deciderMatch, "B");
+    recalculateGroupedRound(roundIndex);
+  });
+
+  saveState();
+  selectedBracketRoundIndex = roundIndex;
+  renderAll();
+  setAdminNotice(`Đã điền kết quả test cho ${round.title}.`, "ok");
+}
+
+function rebuildSelectedGroupedRound(mode = "random") {
+  const roundIndex = Math.min(selectedDetailRoundIndex, state.rounds.length - 1);
+  const currentRound = state.rounds[roundIndex];
+  const sourcePlayers = currentRound?.sourcePlayers?.length
+    ? currentRound.sourcePlayers
+    : roundIndex > 0
+    ? nextGroupedRoundPlayers()
+    : state.players.map((player) => player.name);
+  const actionLabel = mode === "empty" ? "Tạo bảng trống" : "Chia bảng ngẫu nhiên";
+  if (sourcePlayers.length < 2) {
+    setAdminNotice(`Cần ít nhất 2 cơ thủ để ${actionLabel.toLowerCase()}.`, "error");
+    return;
+  }
+  if (currentRound && !confirm(`${actionLabel} cho ${currentRound.title || "vòng đang chọn"} sẽ xoá điểm của vòng này và các vòng sau. Tiếp tục?`)) {
+    return;
+  }
+  state.rounds = state.rounds.slice(0, Math.max(0, roundIndex));
+  state.rounds.push(buildGroupedRound(sourcePlayers, roundIndex, mode));
+  saveState();
+  selectedTournamentDetailTab = "bracket";
+  selectedDetailRoundIndex = roundIndex;
+  selectedBracketRoundIndex = roundIndex;
+  renderAll();
+  setAdminNotice(`${actionLabel} cho ${state.rounds[roundIndex].title}.`, "ok");
+}
+
+function createEmptyGroupedBracketFromDetail() {
+  rebuildSelectedGroupedRound("empty");
+}
+
+function deleteSelectedDetailRound() {
+  if (!state.rounds.length) {
+    setAdminNotice("Chưa có vòng đấu để xóa.", "error");
+    return;
+  }
+  const roundIndex = Math.min(selectedDetailRoundIndex, state.rounds.length - 1);
+  const roundTitle = state.rounds[roundIndex]?.title || "vòng hiện tại";
+  if (!confirm(`Xóa ${roundTitle} và các vòng sau nó?`)) {
+    return;
+  }
+  state.rounds = state.rounds.slice(0, roundIndex);
+  selectedDetailRoundIndex = Math.max(0, state.rounds.length - 1);
+  selectedBracketRoundIndex = selectedDetailRoundIndex;
+  selectedTournamentDetailTab = "bracket";
+  saveState();
+  renderAll();
+  setAdminNotice(`Đã xóa ${roundTitle}.`, "ok");
+}
+
 function submitDirectoryTournamentForm(event) {
   event.preventDefault();
   const form = event.currentTarget;
   const name = form.elements.name.value.trim() || "Ma Buu Billiards Tournament";
   const date = form.elements.date.value;
-  const format = form.elements.format.value;
+  const rank = form.elements.rank.value.trim();
+  const organizer = form.elements.organizer.value.trim();
+  const location = form.elements.location.value.trim();
+  const description = form.elements.description.value.trim();
 
   if (selectedTournamentId === "current") {
-    state.tournament.name = name;
-    state.tournament.date = date;
-    state.tournament.format = format;
+    state.tournament = {
+      ...state.tournament,
+      name,
+      date,
+      rank,
+      organizer,
+      location,
+      description,
+    };
   } else {
     const entry = state.tournamentHistory.find((item) => item.id === selectedTournamentId);
     if (entry) {
@@ -2662,7 +3533,10 @@ function submitDirectoryTournamentForm(event) {
         ...(entry.tournament || {}),
         name,
         date,
-        format,
+        rank,
+        organizer,
+        location,
+        description,
       };
     }
   }
@@ -2784,35 +3658,81 @@ async function submitDirectoryRegistrationRequest(event) {
 function renderOverview() {
   const nameInput = document.querySelector("#tournamentName");
   const dateInput = document.querySelector("#tournamentDate");
-  const formatInput = document.querySelector("#tournamentFormat");
+  const rankInput = document.querySelector("#tournamentRank");
+  const organizerInput = document.querySelector("#tournamentOrganizer");
+  const locationInput = document.querySelector("#tournamentLocation");
+  const descriptionInput = document.querySelector("#tournamentDescription");
   const cards = document.querySelector("#overviewCards");
 
-  if (!nameInput || !dateInput || !formatInput || !cards) {
+  if (!nameInput || !dateInput || !cards) {
     return;
   }
 
   nameInput.value = state.tournament.name || "";
   dateInput.value = state.tournament.date || "";
-  formatInput.value = state.tournament.format || "single";
+  if (rankInput) rankInput.value = state.tournament.rank || "";
+  if (organizerInput) organizerInput.value = state.tournament.organizer || "";
+  if (locationInput) locationInput.value = state.tournament.location || "";
+  if (descriptionInput) descriptionInput.value = state.tournament.description || "";
 
   const doneMatches = state.rounds.flatMap((round) => round.matches).filter((match) => match.status === "done").length;
   const totalMatches = state.rounds.flatMap((round) => round.matches).length;
   cards.innerHTML = `
     <article><small>Tên giải</small><strong>${escapeHtml(state.tournament.name || "Chưa thiết lập")}</strong></article>
     <article><small>Ngày thi đấu</small><strong>${escapeHtml(state.tournament.date || "Chưa chọn")}</strong></article>
+    <article><small>Hạng giải</small><strong>${escapeHtml(state.tournament.rank || "Chưa nhập")}</strong></article>
+    <article><small>Đơn vị tổ chức</small><strong>${escapeHtml(state.tournament.organizer || "Chưa nhập")}</strong></article>
+    <article><small>Địa điểm</small><strong>${escapeHtml(state.tournament.location || "Chưa nhập")}</strong></article>
     <article><small>Cơ thủ</small><strong>${state.players.length}</strong></article>
     <article><small>Trận đã xong</small><strong>${doneMatches}/${totalMatches || 0}</strong></article>
-    <article><small>Thể thức</small><strong>${state.tournament.format === "double" ? "Sơ đồ 2 mạng đối xứng" : "Loại trực tiếp"}</strong></article>
     <article><small>Trạng thái</small><strong>${totalMatches && doneMatches === totalMatches ? "Hoàn tất" : "Đang diễn ra"}</strong></article>
   `;
 }
 
+function renderHomePlayerList(query = "") {
+  const playerList = document.querySelector("#homePlayerList");
+  const playerCount = document.querySelector("#homePlayerCount");
+
+  if (!playerList) {
+    return;
+  }
+
+  const normalizedQuery = query.trim().toLocaleLowerCase("vi");
+  const visiblePlayers = normalizedQuery
+    ? state.players.filter((player) => `${player.name || ""} ${player.rank || ""} ${player.note || ""}`.toLocaleLowerCase("vi").includes(normalizedQuery))
+    : state.players;
+
+  if (playerCount) {
+    playerCount.textContent = state.players.length;
+  }
+
+  playerList.innerHTML = visiblePlayers.length
+    ? visiblePlayers.map((player) => {
+        const playerIndex = state.players.indexOf(player);
+        const displayPlayer = splitRankedPlayerName(player.name, player.rank);
+        return `
+          <article class="home-player-row">
+            <span>${playerIndex + 1}</span>
+            <div class="home-player-identity">
+              <i aria-hidden="true">${escapeHtml((displayPlayer.name || "?").charAt(0).toUpperCase())}</i>
+              <strong>${escapeHtml(displayPlayer.name)}</strong>
+            </div>
+            <b>${escapeHtml(displayPlayer.rank)}</b>
+            <button type="button" aria-label="Thông tin ${escapeHtml(player.name)}" title="${escapeHtml(player.note || player.name)}">i</button>
+          </article>
+        `;
+      }).join("")
+    : `<div class="home-player-empty">${state.players.length ? "Không tìm thấy cơ thủ phù hợp." : "Danh sách cơ thủ đang được cập nhật."}</div>`;
+}
+
 function renderHome() {
   const title = document.querySelector("#homeTournamentName");
-  const meta = document.querySelector("#homeTournamentMeta");
   const stats = document.querySelector("#homeStats");
+  const detailFacts = document.querySelector("#homeDetailFacts");
+  const otherContent = document.querySelector("#homeOtherContent");
 
-  if (!title || !meta || !stats) {
+  renderAdminHomeTournamentList();
+  if (!stats) {
     return;
   }
 
@@ -2822,8 +3742,29 @@ function renderHome() {
   const waitingMatches = matches.length - doneMatches - liveMatches;
   const status = matches.length && doneMatches === matches.length ? "Hoàn tất" : "Đang diễn ra";
 
-  title.textContent = state.tournament.name || "Ma Buu Billiards Tournament";
-  meta.textContent = `${state.tournament.date || "Chưa chọn ngày"} • ${state.players.length} cơ thủ • ${matches.length} trận`;
+  if (title) title.textContent = state.tournament.name || "Ma Buu Billiards Tournament";
+  renderHomePlayerList(document.querySelector("#homePlayerSearch")?.value || "");
+  if (detailFacts) {
+    detailFacts.innerHTML = `
+      <div><small>Thời gian diễn ra</small><strong>${escapeHtml(state.tournament.date || "Đang cập nhật")}</strong></div>
+      <div><small>Tổng số cơ thủ</small><strong>${state.players.length}</strong></div>
+      <div><small>Hạng giải</small><strong>${escapeHtml(state.tournament.rank || "Đang cập nhật")}</strong></div>
+      <div><small>Đơn vị tổ chức</small><strong>${escapeHtml(state.tournament.organizer || "Đang cập nhật")}</strong></div>
+      <div><small>Địa điểm tổ chức</small><strong>${escapeHtml(state.tournament.location || "Đang cập nhật")}</strong></div>
+    `;
+  }
+  if (otherContent) {
+    otherContent.innerHTML = `
+      <p>${state.tournament.description
+        ? escapeHtml(state.tournament.description).replace(/\n/g, "<br>")
+        : `Giải đấu <strong>${escapeHtml(state.tournament.name || "Ma Buu Billiards Tournament")}</strong> được tổ chức dành cho cộng đồng yêu billiards, với lịch thi đấu và kết quả được cập nhật trực tiếp.`}</p>
+      <div class="home-other-tags">
+        <span>${matches.length} trận đấu</span>
+        <span>${state.rounds.length} vòng đấu</span>
+        <span>Cập nhật trực tiếp</span>
+      </div>
+    `;
+  }
   stats.innerHTML = `
     <article>
       <small>Trạng thái</small>
@@ -2842,6 +3783,45 @@ function renderHome() {
       <strong>${Math.max(waitingMatches, 0)}</strong>
     </article>
   `;
+}
+
+function renderAdminHomeTournamentList() {
+  const list = document.querySelector("#adminHomeTournamentList");
+  if (!isAdmin || !list) return;
+
+  const entries = getTournamentEntries();
+  list.innerHTML = entries.map((entry) => {
+    const tournament = entry.tournament || {};
+    const players = Array.isArray(entry.players) ? entry.players : [];
+    const matches = matchesForEntry(entry);
+    const doneMatches = matches.filter((match) => match.status === "done").length;
+    return `
+      <button class="admin-tournament-card" data-admin-select-tournament="${escapeHtml(entry.id)}" type="button">
+        <span class="admin-tournament-status${entry.isCurrent ? " current" : ""}">${entry.isCurrent ? "Đang mở" : "Đã lưu"}</span>
+        <strong>${escapeHtml(tournament.name || "Giải đấu chưa đặt tên")}</strong>
+        <small>${escapeHtml(tournament.date || "Chưa chọn ngày")}</small>
+        <div><span>${players.length} cơ thủ</span><span>${doneMatches}/${matches.length} trận</span></div>
+        <i>Xem và quản lý →</i>
+      </button>
+    `;
+  }).join("");
+
+  list.querySelectorAll("[data-admin-select-tournament]").forEach((button) => {
+    button.addEventListener("click", () => {
+      selectedTournamentId = button.dataset.adminSelectTournament;
+      selectedTournamentDetailTab = "info";
+      selectedDetailRoundIndex = 0;
+      renderTournamentDirectory();
+      document.querySelectorAll(".panel").forEach((panel) => {
+        panel.hidden = panel.id !== "tournaments";
+      });
+      document.querySelectorAll(".main-nav .tab").forEach((tabButton) => tabButton.classList.remove("active"));
+      document.querySelectorAll(".page-home-only").forEach((element) => {
+        element.hidden = true;
+      });
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+  });
 }
 
 function hasOpenTournament() {
@@ -3290,19 +4270,126 @@ function renderRanking() {
   body.innerHTML = ranking.length
     ? ranking
         .map(
-          (row, index) => `
+          (row, index) => {
+            const displayPlayer = splitRankedPlayerName(row.name);
+            return `
             <tr>
               <td>${index + 1}</td>
-              <td>${escapeHtml(row.name)}</td>
+              <td>${escapeHtml(displayPlayer.name)}</td>
+              <td>${escapeHtml(displayPlayer.rank)}</td>
               <td>${row.played}</td>
               <td>${row.won}</td>
               <td>${row.lost}</td>
               <td>${row.winRate}% • ${row.tournamentCount} giải</td>
             </tr>
-          `,
+          `;
+          },
         )
         .join("")
-    : `<tr><td colspan="6">Chưa có dữ liệu xếp hạng.</td></tr>`;
+    : `<tr><td colspan="7">Chưa có dữ liệu xếp hạng.</td></tr>`;
+}
+
+function renderTournamentRanking() {
+  const body = document.querySelector("#tournamentRankingBody");
+  const title = document.querySelector("#tournamentRankingTitle");
+  if (!body) {
+    return;
+  }
+
+  if (title) {
+    title.textContent = state.tournament.name || "Giải hiện tại";
+  }
+
+  const currentRows = new Map();
+  state.players.forEach((player) => addRankingPlayer(currentRows, player.name, "current"));
+  tournamentRankingRecords({
+    id: "current",
+    players: state.players,
+    rounds: state.rounds,
+  }).forEach((record) => mergeRankingRecord(currentRows, record));
+
+  const ranking = [...currentRows.values()]
+    .map((row) => ({
+      ...row,
+      winRate: row.played ? Math.round((row.won / row.played) * 100) : 0,
+    }))
+    .sort(
+      (a, b) =>
+        b.won - a.won ||
+        b.played - a.played ||
+        b.winRate - a.winRate ||
+        a.name.localeCompare(b.name, "vi"),
+    );
+
+  body.innerHTML = ranking.length
+    ? ranking.map((row, index) => {
+        const displayPlayer = splitRankedPlayerName(row.name);
+        return `
+        <tr>
+          <td>${index + 1}</td>
+          <td>${escapeHtml(displayPlayer.name)}</td>
+          <td>${escapeHtml(displayPlayer.rank)}</td>
+          <td>${row.played}</td>
+          <td>${row.won}</td>
+          <td>${row.lost}</td>
+          <td>${row.winRate}%</td>
+        </tr>
+      `;
+      }).join("")
+    : `<tr><td colspan="7">Chưa có cơ thủ trong giải này.</td></tr>`;
+}
+
+function contactMapEmbedUrl(contact) {
+  const query = contact.address || contact.mapsUrl || contact.name || "Ma Buu Billiards";
+  return `https://www.google.com/maps?q=${encodeURIComponent(query)}&output=embed`;
+}
+
+function safeHttpUrl(value) {
+  try {
+    const url = new URL(String(value || ""));
+    return ["http:", "https:"].includes(url.protocol) ? url.href : "";
+  } catch (error) {
+    return "";
+  }
+}
+
+function renderContact() {
+  const contact = {
+    ...createDefaultState().contact,
+    ...(state.contact || {}),
+  };
+  const name = document.querySelector("#contactDisplayName");
+  const list = document.querySelector("#contactDisplayList");
+  const map = document.querySelector("#contactMap");
+  const mapsUrl = safeHttpUrl(contact.mapsUrl);
+
+  if (name) name.textContent = contact.name || "Ma Buu Billiards";
+  if (list) {
+    list.innerHTML = `
+      <article><small>Địa điểm</small><strong>${escapeHtml(contact.address || "Đang cập nhật")}</strong></article>
+      ${contact.phone ? `<article><small>Điện thoại</small><a href="tel:${escapeHtml(contact.phone.replace(/\s/g, ""))}">${escapeHtml(contact.phone)}</a></article>` : ""}
+      ${contact.email ? `<article><small>Email</small><a href="mailto:${escapeHtml(contact.email)}">${escapeHtml(contact.email)}</a></article>` : ""}
+      ${contact.note ? `<article><small>Thông tin</small><strong>${escapeHtml(contact.note)}</strong></article>` : ""}
+      ${mapsUrl ? `<article><small>Chỉ đường</small><a href="${escapeHtml(mapsUrl)}" target="_blank" rel="noopener">Mở Google Maps</a></article>` : ""}
+    `;
+  }
+  if (map) {
+    map.src = contactMapEmbedUrl(contact);
+    map.title = `Bản đồ ${contact.name || "Ma Buu Billiards"}`;
+  }
+
+  const fields = {
+    contactName: contact.name,
+    contactAddress: contact.address,
+    contactPhone: contact.phone,
+    contactEmail: contact.email,
+    contactMapsUrl: contact.mapsUrl,
+    contactNote: contact.note,
+  };
+  Object.entries(fields).forEach(([id, value]) => {
+    const input = document.querySelector(`#${id}`);
+    if (input && document.activeElement !== input) input.value = value || "";
+  });
 }
 
 function renderDownload() {
@@ -3329,6 +4416,58 @@ function normalizeLanCamera(item) {
 function normalizeAppPin(value) {
   const pin = String(value || "").replace(/\D/g, "");
   return pin.length === 6 ? pin : "";
+}
+
+function normalizeAdBanner(value) {
+  return {
+    enabled: Boolean(value?.enabled),
+    name: String(value?.name || "").trim().replace(/[\\/]/g, "-"),
+    url: String(value?.url || "").trim(),
+  };
+}
+
+function readFileAsBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || "").split(",").pop() || "");
+    reader.onerror = () => reject(reader.error || new Error("Không đọc được hình."));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function uploadAdBannerFile(file) {
+  const client = getSupabaseClient();
+  const { data: sessionData } = await client.auth.getSession();
+  const accessToken = sessionData?.session?.access_token;
+  if (!accessToken) throw new Error("Phiên đăng nhập admin đã hết hạn. Hãy đăng nhập lại.");
+  const response = await fetch("/api/ad-banner-upload", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({ name: file.name, type: file.type, data: await readFileAsBase64(file) }),
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok || !result.ok) throw new Error(result.message || `Tải hình thất bại (HTTP ${response.status}).`);
+  return result;
+}
+
+function renderAdBannerSettings() {
+  const name = document.querySelector("#adBannerName");
+  const url = document.querySelector("#adBannerUrl");
+  const enabled = document.querySelector("#adBannerEnabled");
+  const summary = document.querySelector("#adBannerSummary");
+  const preview = document.querySelector("#adBannerPreview");
+  if (!name || !url || !enabled || !summary || !preview) return;
+  const banner = normalizeAdBanner(state.adBanner);
+  if (document.activeElement !== name) name.value = banner.name;
+  if (document.activeElement !== url) url.value = banner.url;
+  enabled.checked = banner.enabled;
+  summary.textContent = banner.name || "Chưa cấu hình banner";
+  preview.innerHTML = banner.url
+    ? `<img src="${escapeHtml(banner.url)}" alt="Xem trước ${escapeHtml(banner.name || "banner")}" />`
+    : "<span>Chưa có hình</span>";
 }
 
 function renderAppPinSettings() {
@@ -3419,11 +4558,15 @@ function renderAll() {
   renderBracket();
   renderSchedule();
   renderRanking();
+  renderTournamentRanking();
+  renderContact();
   renderHistory();
   renderLanCameraSettings();
   renderCameraViewPanels();
   renderAppPinSettings();
+  renderAdBannerSettings();
   renderDownload();
+  renderAddRoundStatus();
   keepActivePanelVisible();
 }
 
@@ -3477,16 +4620,14 @@ function openCreateTournamentModal() {
   const modal = document.querySelector("#createTournamentModal");
   const nameInput = document.querySelector("#newTournamentName");
   const dateInput = document.querySelector("#newTournamentDate");
-  const formatInput = document.querySelector("#newTournamentFormat");
 
-  if (!modal || !nameInput || !dateInput || !formatInput) {
+  if (!modal || !nameInput || !dateInput) {
     document.querySelector("#tournamentName")?.focus();
     return;
   }
 
   nameInput.value = "";
   dateInput.value = new Date().toISOString().slice(0, 10);
-  formatInput.value = "single";
   modal.hidden = false;
   nameInput.focus();
 }
@@ -3506,10 +4647,6 @@ function closeManualPairingModal() {
 function openManualPairingModal() {
   if (state.players.length < 2 || state.players.length % 2 !== 0) {
     alert("Cần số lượng cơ thủ chẵn để xếp cặp thủ công.");
-    return;
-  }
-  if (state.tournament.format === "double" && ![16, 24, 32].includes(state.players.length)) {
-    alert("Thể thức 2 mạng hỗ trợ 16, 24 hoặc 32 cơ thủ.");
     return;
   }
   const modal = document.querySelector("#manualPairingModal");
@@ -3572,6 +4709,109 @@ function submitManualPairing(event) {
   setAdminNotice("Đã tạo bracket theo cặp thủ công.", "ok");
 }
 
+function nextGroupedRoundPlayers() {
+  const lastRound = state.rounds[state.rounds.length - 1];
+  if (isGroupedRound(lastRound)) return groupedRoundWinners(lastRound);
+  return (lastRound?.matches || [])
+    .filter((match) => match.status === "done" && match.winner)
+    .map((match) => match.winner);
+}
+
+function canAddGroupedRound() {
+  const lastRound = state.rounds[state.rounds.length - 1];
+  if (!lastRound) {
+    return { ok: false, message: "Hãy tạo vòng bảng trước." };
+  }
+  if ((lastRound.matches || []).some((match) => match.status !== "done" || !match.winner)) {
+    return { ok: false, message: "Cần nhập kết quả xong toàn bộ trận ở vòng trước." };
+  }
+  const roundPlayers = isGroupedRound(lastRound)
+    ? groupedRoundPlayerNames(lastRound)
+    : (lastRound.sourcePlayers || []);
+  if (roundPlayers.length < (lastRound.sourcePlayers || []).length) {
+    return { ok: false, message: "Cần xếp đủ cơ thủ vào vòng hiện tại trước khi thêm vòng mới." };
+  }
+  const winners = nextGroupedRoundPlayers();
+  if (winners.length < 2) {
+    return { ok: false, message: "Không còn đủ 2 cơ thủ để tạo vòng tiếp theo." };
+  }
+  if (winners.length === roundPlayers.length) {
+    return { ok: false, message: "Vòng trước chưa loại được người chơi nào." };
+  }
+  if (lastRound.title === "Chung kết") {
+    return { ok: false, message: "Giải đã đến chung kết." };
+  }
+  return { ok: true, message: `${winners.length} cơ thủ thắng sẽ vào ${groupedRoundTitle(state.rounds.length, winners.length)}.` };
+}
+
+function renderAddRoundStatus() {
+  const button = document.querySelector("#addTournamentRound");
+  const emptyButton = document.querySelector("#addEmptyTournamentRound");
+  const status = canAddGroupedRound();
+  const canCreateEmptyBracket = state.players.length >= 2;
+  if (button) {
+    button.disabled = !status.ok;
+    button.title = status.message;
+  }
+  if (emptyButton) {
+    emptyButton.disabled = !canCreateEmptyBracket;
+    emptyButton.title = canCreateEmptyBracket ? "Tạo vòng bảng trống từ danh sách cơ thủ hiện tại." : "Cần ít nhất 2 cơ thủ để tạo bảng trống.";
+  }
+  const modalStatus = document.querySelector("#addRoundStatus");
+  if (modalStatus) {
+    modalStatus.textContent = status.message;
+    modalStatus.dataset.type = status.ok ? "ok" : "error";
+  }
+}
+
+function openAddRoundModal() {
+  const status = canAddGroupedRound();
+  if (!status.ok) {
+    alert(status.message);
+    renderAddRoundStatus();
+    return;
+  }
+  const modal = document.querySelector("#addRoundModal");
+  const formatInput = document.querySelector("#addRoundFormat");
+  renderAddRoundStatus();
+  if (formatInput) formatInput.value = "single";
+  if (modal) modal.hidden = false;
+}
+
+function closeAddRoundModal() {
+  const modal = document.querySelector("#addRoundModal");
+  if (modal) modal.hidden = true;
+}
+
+function submitAddRound(event) {
+  event.preventDefault();
+  const formatInput = document.querySelector("#addRoundFormat");
+  addGroupedRound(formatInput?.value || "single");
+}
+
+function addGroupedRound(format = "single") {
+  const status = canAddGroupedRound();
+  const statusEl = document.querySelector("#addRoundStatus");
+  if (!status.ok) {
+    if (statusEl) {
+      statusEl.textContent = status.message;
+      statusEl.dataset.type = "error";
+    }
+    return;
+  }
+  const winners = nextGroupedRoundPlayers();
+  const nextRound = format === "grouped"
+    ? buildGroupedRound(winners, state.rounds.length, "random")
+    : buildSingleEliminationRound(winners, state.rounds.length);
+  state.rounds.push(nextRound);
+  selectedDetailRoundIndex = state.rounds.length - 1;
+  selectedBracketRoundIndex = selectedDetailRoundIndex;
+  saveState();
+  renderAll();
+  closeAddRoundModal();
+  setAdminNotice(`Đã thêm ${state.rounds[state.rounds.length - 1].title}.`, "ok");
+}
+
 function closeMatchPairEditor() {
   const modal = document.querySelector("#matchPairEditorModal");
   if (modal) modal.hidden = true;
@@ -3579,11 +4819,15 @@ function closeMatchPairEditor() {
 
 function openMatchPairEditor(roundIndex, matchIndex) {
   const match = state.rounds[roundIndex]?.matches[matchIndex];
+  const round = state.rounds[roundIndex];
   const modal = document.querySelector("#matchPairEditorModal");
   if (!match || !modal) return;
+  const eligibleNames = isGroupedRound(round) && Array.isArray(round.sourcePlayers) && round.sourcePlayers.length
+    ? round.sourcePlayers
+    : state.players.map((player) => player.name);
   const optionMarkup = (current) => [
     `<option value="">Chờ tự động</option>`,
-    ...state.players.map((player) => `<option value="${escapeHtml(player.name)}"${player.name === current ? " selected" : ""}>${escapeHtml(player.name)}</option>`),
+    ...eligibleNames.map((name) => `<option value="${escapeHtml(name)}"${name === current ? " selected" : ""}>${escapeHtml(name)}</option>`),
   ].join("");
   document.querySelector("#matchPairRound").value = roundIndex;
   document.querySelector("#matchPairMatch").value = matchIndex;
@@ -3619,7 +4863,6 @@ function createNewTournamentFromModal(event) {
   event.preventDefault();
   const nameInput = document.querySelector("#newTournamentName");
   const dateInput = document.querySelector("#newTournamentDate");
-  const formatInput = document.querySelector("#newTournamentFormat");
   const name = nameInput?.value.trim();
 
   if (!name) {
@@ -3633,9 +4876,10 @@ function createNewTournamentFromModal(event) {
   }
 
   state.tournament = {
+    ...createDefaultState().tournament,
     name,
     date: dateInput?.value || new Date().toISOString().slice(0, 10),
-    format: formatInput?.value || "single",
+    format: "single",
   };
   state.players = [];
   state.registrationRequests = [];
@@ -3770,14 +5014,41 @@ function bindTournamentManager() {
   document.querySelector("#matchPairEditorModal")?.addEventListener("click", (event) => {
     if (event.target.id === "matchPairEditorModal") closeMatchPairEditor();
   });
+  document.querySelector("#addTournamentRound")?.addEventListener("click", openAddRoundModal);
+  document.querySelector("#addEmptyTournamentRound")?.addEventListener("click", createEmptyGroupedBracketFromDetail);
+  document.querySelector("#addRoundForm")?.addEventListener("submit", submitAddRound);
+  document.querySelector("#closeAddRound")?.addEventListener("click", closeAddRoundModal);
+  document.querySelector("#cancelAddRound")?.addEventListener("click", closeAddRoundModal);
+  document.querySelector("#addRoundModal")?.addEventListener("click", (event) => {
+    if (event.target.id === "addRoundModal") closeAddRoundModal();
+  });
 
   document.querySelector("#tournamentForm")?.addEventListener("submit", (event) => {
     event.preventDefault();
     state.tournament.name = document.querySelector("#tournamentName").value.trim() || "Ma Buu Billiards Tournament";
     state.tournament.date = document.querySelector("#tournamentDate").value;
-    state.tournament.format = document.querySelector("#tournamentFormat").value;
+    state.tournament.rank = document.querySelector("#tournamentRank")?.value.trim() || "";
+    state.tournament.organizer = document.querySelector("#tournamentOrganizer")?.value.trim() || "";
+    state.tournament.location = document.querySelector("#tournamentLocation")?.value.trim() || "";
+    state.tournament.description = document.querySelector("#tournamentDescription")?.value.trim() || "";
     saveState();
     renderAll();
+    setAdminNotice("Đã lưu thông tin giải và đồng bộ lên Supabase.", "ok");
+  });
+
+  document.querySelector("#contactForm")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    state.contact = {
+      name: document.querySelector("#contactName")?.value.trim() || "Ma Buu Billiards",
+      address: document.querySelector("#contactAddress")?.value.trim() || "",
+      phone: document.querySelector("#contactPhone")?.value.trim() || "",
+      email: document.querySelector("#contactEmail")?.value.trim() || "",
+      mapsUrl: document.querySelector("#contactMapsUrl")?.value.trim() || "",
+      note: document.querySelector("#contactNote")?.value.trim() || "",
+    };
+    saveState();
+    renderContact();
+    setAdminNotice("Đã lưu thông tin liên hệ và đồng bộ lên Supabase.", "ok");
   });
 
   document.querySelector("#playerForm")?.addEventListener("submit", (event) => {
@@ -3919,6 +5190,61 @@ function bindTournamentManager() {
       status.dataset.type = "ok";
     }
     setAdminNotice("Đã lưu mã PIN APP.", "ok");
+  });
+
+  document.querySelector("#adBannerFile")?.addEventListener("change", (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const name = document.querySelector("#adBannerName");
+    const preview = document.querySelector("#adBannerPreview");
+    if (name) name.value = file.name;
+    if (preview) preview.innerHTML = `<img src="${URL.createObjectURL(file)}" alt="Xem trước banner" />`;
+  });
+
+  document.querySelector("#adBannerForm")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const status = document.querySelector("#adBannerStatus");
+    const submitButton = event.currentTarget.querySelector('[type="submit"]');
+    const file = document.querySelector("#adBannerFile")?.files?.[0];
+    let url = state.adBanner?.url || "";
+    let name = state.adBanner?.name || "";
+    const enabled = Boolean(document.querySelector("#adBannerEnabled")?.checked);
+    if (file && file.size > 4 * 1024 * 1024) {
+      status.textContent = "Hình lớn hơn 4 MB. Hãy giảm kích thước rồi thử lại.";
+      status.dataset.type = "error";
+      return;
+    }
+    if (file && !["image/jpeg", "image/png", "image/webp", "image/gif"].includes(file.type)) {
+      status.textContent = "Chỉ hỗ trợ hình JPG, PNG, WebP hoặc GIF.";
+      status.dataset.type = "error";
+      return;
+    }
+    try {
+      if (file) {
+        submitButton.disabled = true;
+        status.textContent = `Đang tải ${file.name} lên web...`;
+        status.dataset.type = "";
+        const uploaded = await uploadAdBannerFile(file);
+        name = uploaded.name;
+        url = uploaded.url;
+      }
+      if (enabled && (!name || !/^https?:\/\//i.test(url))) {
+        throw new Error("Hãy chọn một hình từ máy trước khi bật banner.");
+      }
+      state.adBanner = { enabled, name, url };
+      saveState();
+      document.querySelector("#adBannerFile").value = "";
+      renderAdBannerSettings();
+      status.textContent = enabled ? `Đã tải và bật banner ${name}.` : "Đã tắt banner quảng cáo.";
+      status.dataset.type = "ok";
+      setAdminNotice(enabled ? `Đã lưu banner ${name}.` : "Đã tắt banner quảng cáo.", "ok");
+    } catch (error) {
+      status.textContent = error.message;
+      status.dataset.type = "error";
+      setAdminNotice(error.message, "error");
+    } finally {
+      submitButton.disabled = false;
+    }
   });
 
   document.querySelectorAll("[data-pin-key]").forEach((button) => {
@@ -4220,6 +5546,9 @@ bindCameraSelector();
 document.addEventListener("focusin", markLocalEdit);
 document.addEventListener("input", markLocalEdit);
 document.addEventListener("change", markLocalEdit);
+document.querySelector("#homePlayerSearch")?.addEventListener("input", (event) => {
+  renderHomePlayerList(event.target.value);
+});
 
 if (isAdmin) {
   initAdminAuth();

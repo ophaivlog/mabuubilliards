@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>Ma Buu Tournament Admin</title>
-    <link rel="stylesheet" href="styles.css?v=20260722-2" />
+    <link rel="stylesheet" href="styles.css?v=20260907-3" />
   </head>
   <body data-mode="admin" data-auth="locked">
     <section class="admin-login" id="adminLogin">
@@ -33,9 +33,7 @@
 
       <nav class="main-nav" role="tablist" aria-label="Điều hướng chính">
         <a href="index.html">Trang người xem</a>
-        <button class="tab active" type="button" data-tab="home"><span>Trang chủ</span></button>
-        <button class="tab" type="button" data-tab="bracket"><span>Sơ đồ đấu</span></button>
-        <button class="tab" type="button" data-tab="tournaments"><span>Giải đấu</span></button>
+        <button class="tab active" type="button" data-tab="home"><span>Quản lý giải đấu</span></button>
         <button class="tab" type="button" data-tab="ranking"><span>Xếp hạng</span></button>
         <div class="nav-dropdown" data-camera-menu>
           <button class="tab" type="button" data-tab="camera" data-camera-view="lan"><span>Camera</span></button>
@@ -46,6 +44,7 @@
         </div>
         <button class="tab" type="button" data-tab="minigame"><span>Mini game</span></button>
         <button class="tab" type="button" data-tab="contact"><span>Liên hệ</span></button>
+        <button class="tab" type="button" data-tab="adBanner"><span>Chèn Banner quảng cáo</span></button>
         <button class="tab" type="button" data-tab="appPin"><span>Mã PIN APP</span></button>
         <button class="tab" type="button" data-tab="download"><span>Tải về</span></button>
       </nav>
@@ -56,36 +55,22 @@
       </div>
     </header>
 
-    <section class="hero-strip" data-auth-required>
-      <div class="hero-inner">
-        <div class="breadcrumbs" aria-label="Breadcrumb">
-          <a href="index.html">Trang người xem</a>
-          <span></span>
-          <a href="#">Admin</a>
-          <span></span>
-          <a href="#">Quản lý giải</a>
-          <span></span>
-        </div>
-        <h1>Admin quản lý giải đấu</h1>
-      </div>
-    </section>
-
     <main data-auth-required>
       <div class="cloud-status" id="cloudStatus">Đang kiểm tra dữ liệu...</div>
 
       <section class="panel" id="home">
         <div class="home-dashboard">
-          <div class="home-copy">
-            <p>TRANG CHỦ</p>
-            <h2 id="homeTournamentName">Ma Buu Billiards Tournament</h2>
-            <span id="homeTournamentMeta">Đang tải dữ liệu giải hiện tại...</span>
+          <div class="admin-home-tournaments">
+            <div class="admin-home-tournament-heading">
+              <div>
+                <p>QUẢN LÝ GIẢI ĐẤU</p>
+                <h2>Tất cả giải đấu</h2>
+                <span>Chọn một giải để xem thông tin, cơ thủ và sơ đồ đấu.</span>
+              </div>
+              <button class="primary-action" data-open-create-tournament type="button">Tạo giải mới</button>
+            </div>
+            <div class="admin-home-tournament-list" id="adminHomeTournamentList"></div>
           </div>
-          <div class="home-actions">
-            <button class="primary-action" data-home-tab="bracket" type="button">Xem sơ đồ đấu</button>
-            <button class="secondary-action" data-home-tab="tournaments" type="button">Danh sách giải</button>
-            <button class="secondary-action" data-home-tab="overview" type="button">Thiết lập giải</button>
-          </div>
-          <div class="home-stat-grid" id="homeStats"></div>
         </div>
       </section>
 
@@ -119,12 +104,20 @@
               <input id="tournamentDate" type="date" />
             </label>
             <label>
-              Thể thức
-              <select id="tournamentFormat">
-                <option value="single">Loại trực tiếp</option>
-                <option value="double">Sơ đồ 2 mạng đối xứng (16/24/32 cơ thủ)</option>
-                <option value="round-robin" disabled>Vòng tròn (sắp có)</option>
-              </select>
+              Hạng giải
+              <input id="tournamentRank" type="text" placeholder="Ví dụ: G, H hoặc Mở rộng" />
+            </label>
+            <label>
+              Đơn vị tổ chức
+              <input id="tournamentOrganizer" type="text" placeholder="Ma Buu Billiards" />
+            </label>
+            <label>
+              Địa điểm tổ chức
+              <input id="tournamentLocation" type="text" placeholder="Tên CLB hoặc địa chỉ thi đấu" />
+            </label>
+            <label>
+              Thông tin khác
+              <textarea id="tournamentDescription" rows="5" placeholder="Nhập giới thiệu, điều lệ hoặc ghi chú của giải..."></textarea>
             </label>
             <button class="primary-action" type="submit">Lưu thông tin</button>
           </div>
@@ -222,8 +215,8 @@
         <div class="data-section wide-section">
           <div class="section-heading">
             <div>
-              <p>XẾP HẠNG</p>
-              <h2>Bảng thành tích</h2>
+              <p>XẾP HẠNG TỔNG</p>
+              <h2>Tất cả giải đấu</h2>
             </div>
             <div class="request-actions">
               <button class="danger-action" id="clearRankingData" type="button">Xóa toàn bộ xếp hạng</button>
@@ -235,6 +228,7 @@
                 <tr>
                   <th>#</th>
                   <th>Cơ thủ</th>
+                  <th>Hạng</th>
                   <th>Trận</th>
                   <th>Thắng</th>
                   <th>Thua</th>
@@ -249,16 +243,12 @@
 
       <section class="panel bracket-panel" id="bracket" hidden>
         <div class="tournament-title">
-          <div>
-            <p>GIẢI ĐẤU</p>
-            <h2 id="bracketTitle">MA BUU BILLIARDS TOURNAMENT</h2>
-          </div>
           <div class="bracket-tools">
-            <button class="secondary-action" id="openManualPairing" type="button">Xếp cặp thủ công</button>
             <button class="secondary-action" id="resetScores" type="button">Xoá điểm</button>
             <button class="primary-action" id="saveBracket" type="button">Lưu bracket</button>
           </div>
         </div>
+        <div class="bracket-round-tabs" id="bracketRoundTabs" aria-label="Chọn vòng đấu"></div>
         <div class="bracket-scroll" aria-label="Sơ đồ thi đấu có thể cuộn ngang" title="Lăn con lăn chuột để phóng to hoặc thu nhỏ sơ đồ">
           <button class="bracket-fit-toggle" data-bracket-fit type="button">Thu vừa màn hình</button>
           <div class="bracket" id="bracketCanvas"></div>
@@ -421,25 +411,27 @@
       </section>
 
       <section class="panel" id="contact" hidden>
-        <div class="contact-section">
-          <div class="contact-copy">
+        <div class="manager-grid">
+          <form class="form-section" id="contactForm">
             <p>LIÊN HỆ</p>
-            <h2>Ma Buu Billiards</h2>
-            <div class="contact-list">
-              <article>
-                <small>Địa điểm</small>
-                <strong>Thông tin quán trên Google Maps</strong>
-              </article>
-              <article>
-                <small>Chỉ đường</small>
-                <a href="https://maps.app.goo.gl/BNGmfofiftazmygW6" target="_blank" rel="noopener">Mở Google Maps</a>
-              </article>
-            </div>
+            <h2>Chỉnh sửa thông tin</h2>
+            <label>Tên đơn vị<input id="contactName" type="text" placeholder="Ma Buu Billiards" /></label>
+            <label>Địa chỉ<input id="contactAddress" type="text" placeholder="Nhập địa chỉ" /></label>
+            <label>Số điện thoại<input id="contactPhone" type="tel" placeholder="Nhập số điện thoại" /></label>
+            <label>Email<input id="contactEmail" type="email" placeholder="Nhập email" /></label>
+            <label>Liên kết Google Maps<input id="contactMapsUrl" type="url" placeholder="https://maps.app.goo.gl/..." /></label>
+            <label>Thông tin ghi chú<textarea id="contactNote" rows="4" placeholder="Giờ mở cửa hoặc thông tin khác..."></textarea></label>
+            <button class="primary-action" type="submit">Lưu liên hệ</button>
+          </form>
+          <div class="contact-copy">
+            <p>XEM TRƯỚC</p>
+            <h2 id="contactDisplayName">Ma Buu Billiards</h2>
+            <div class="contact-list" id="contactDisplayList"></div>
           </div>
           <div class="map-panel">
             <iframe
+              id="contactMap"
               title="Bản đồ Ma Buu Billiards"
-              src="https://www.google.com/maps?q=https%3A%2F%2Fmaps.app.goo.gl%2FBNGmfofiftazmygW6&output=embed"
               loading="lazy"
               referrerpolicy="no-referrer-when-downgrade"
             ></iframe>
@@ -500,6 +492,40 @@
           </div>
         </div>
       </section>
+
+      <section class="panel" id="adBanner" hidden>
+        <div class="manager-grid">
+          <form class="form-section" id="adBannerForm">
+            <p>QUẢNG CÁO TRÊN APP</p>
+            <h2>Chèn Banner quảng cáo</h2>
+            <label>
+              Chọn hình từ máy
+              <input id="adBannerFile" name="file" type="file" accept="image/jpeg,image/png,image/webp,image/gif" />
+            </label>
+            <label>
+              Tên hình đang lưu
+              <input id="adBannerName" name="name" type="text" readonly />
+            </label>
+            <input id="adBannerUrl" name="url" type="hidden" />
+            <label class="checkbox-row">
+              <input id="adBannerEnabled" name="enabled" type="checkbox" />
+              Bật banner trên app
+            </label>
+            <button class="primary-action" type="submit">Lưu banner</button>
+            <div class="form-status" id="adBannerStatus">Chọn JPG, PNG, WebP hoặc GIF, tối đa 4 MB. Nếu thay nội dung ảnh, hãy dùng tên tệp mới.</div>
+          </form>
+          <div class="data-section">
+            <div class="section-heading">
+              <div>
+                <p>XEM TRƯỚC</p>
+                <h2 id="adBannerSummary">Chưa cấu hình banner</h2>
+              </div>
+            </div>
+            <div class="ad-banner-preview" id="adBannerPreview"><span>Chưa có hình</span></div>
+            <div class="empty-state">Banner xuất hiện sau 20 giây không thao tác tại màn hình bắt đầu. Chạm vào hình để đóng.</div>
+          </div>
+        </div>
+      </section>
     </main>
 
     <div class="modal-backdrop" id="createTournamentModal" hidden>
@@ -518,14 +544,6 @@
         <label>
           Ngày thi đấu
           <input id="newTournamentDate" type="date" />
-        </label>
-        <label>
-          Thể thức
-          <select id="newTournamentFormat">
-            <option value="single">Loại trực tiếp</option>
-            <option value="double">Sơ đồ 2 mạng đối xứng (16/24/32 cơ thủ)</option>
-            <option value="round-robin">Vòng tròn</option>
-          </select>
         </label>
         <div class="modal-actions">
           <button class="secondary-action" id="cancelCreateTournament" type="button">Hủy</button>
@@ -570,10 +588,31 @@
       </form>
     </div>
 
+    <div class="modal-backdrop" id="addRoundModal" hidden>
+      <form class="modal-card" id="addRoundForm">
+        <div class="modal-heading">
+          <div><p>VÒNG TIẾP THEO</p><h2>Thêm vòng đấu</h2></div>
+          <button class="icon-action" id="closeAddRound" type="button" aria-label="Đóng">×</button>
+        </div>
+        <div class="form-status" id="addRoundStatus">Vòng mới sẽ lấy cơ thủ thắng từ vòng trước.</div>
+        <label>
+          Thể thức
+          <select id="addRoundFormat">
+            <option value="single">Loại trực tiếp</option>
+            <option value="grouped">2 mạng</option>
+          </select>
+        </label>
+        <div class="modal-actions">
+          <button class="secondary-action" id="cancelAddRound" type="button">Hủy</button>
+          <button class="primary-action" type="submit">Thêm vòng đấu</button>
+        </div>
+      </form>
+    </div>
+
     <script src="https://unpkg.com/ezuikit-js@8.1.14/ezuikit.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="supabase-config.js?v=20260524-2"></script>
-    <script src="script.js?v=20260722-8"></script>
+    <script src="script.js?v=20260907-26"></script>
   </body>
 </html>
