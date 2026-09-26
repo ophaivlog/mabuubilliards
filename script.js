@@ -39,6 +39,8 @@ const state = loadState();
 let selectedTournamentId = "current";
 let selectedTournamentDetailTab = "info";
 let selectedDetailRoundIndex = 0;
+let selectedDetailBracketPhase = "winner";
+let activeBracketPhaseRender = null;
 let selectedBracketRoundIndex = 0;
 let bracketRenderRoundOffset = 0;
 let selectedCameraView = "lan";
@@ -52,7 +54,7 @@ function createDefaultState() {
     tournament: {
       name: "Ma Buu Billiards Tournament",
       date: new Date().toISOString().slice(0, 10),
-      format: "single",
+      format: "arena",
       rank: "Mở rộng",
       organizer: "Ma Buu Billiards",
       location: "Ma Buu Billiards Club",
@@ -1200,6 +1202,114 @@ function buildSingleEliminationRound(playerNames, roundIndex) {
   };
 }
 
+function buildSingleEliminationBracket(playerNames) {
+  const size = nextPowerOfTwo(playerNames.length);
+  const slots = distributeDiagramSlots(playerNames, size);
+  const rounds = [];
+  for (let roundIndex = 0, matchCount = size / 2; matchCount >= 1; roundIndex += 1, matchCount = Math.floor(matchCount / 2)) {
+    const matches = Array.from({ length: matchCount }, (_, matchIndex) => {
+      const match = makeMatch(roundIndex, matchIndex, roundIndex === 0 ? slots[matchIndex * 2] : null, roundIndex === 0 ? slots[matchIndex * 2 + 1] : null);
+      match.id = `single-r${roundIndex + 1}m${matchIndex + 1}`;
+      match.seedA = match.playerA;
+      match.seedB = match.playerB;
+      match.bracketGroup = "single-elimination";
+      match.allowSingleAdvance = roundIndex === 0;
+      if (roundIndex < Math.log2(size) - 1) {
+        setMatchRoute(match, "nextWin", roundIndex + 1, Math.floor(matchIndex / 2), matchIndex % 2 ? "playerB" : "playerA");
+      }
+      if (roundIndex === 0 && Boolean(match.playerA) !== Boolean(match.playerB)) {
+        match.winner = match.playerA || match.playerB;
+        match.scoreA = match.playerA ? "W" : "";
+        match.scoreB = match.playerB ? "W" : "";
+        match.status = "done";
+      }
+      return match;
+    });
+    rounds.push({
+      title: roundTitles(size)[roundIndex] || "Chung kết",
+      bracketGroup: "single-elimination",
+      fullBracket: true,
+      sourcePlayers: playerNames,
+      matches,
+    });
+  }
+  return rounds;
+}
+
+function buildThreePhaseBracket(playerNames, randomize = false) {
+  const orderedPlayers = randomize ? shuffledItems(playerNames) : [...playerNames];
+  const size = nextPowerOfTwo(Math.max(4, orderedPlayers.length));
+  const slots = distributeDiagramSlots(orderedPlayers, size);
+  const rounds = [];
+  const phaseRound = (phase, phaseRoundIndex, count, title, bracketGroup, seeds = []) => ({
+    title,
+    phase,
+    phaseRoundIndex,
+    bracketGroup,
+    matches: Array.from({ length: count }, (_, matchIndex) => {
+      const match = makeMatch(rounds.length, matchIndex, seeds[matchIndex * 2] || null, seeds[matchIndex * 2 + 1] || null);
+      match.id = `arena-${phase}-r${phaseRoundIndex + 1}m${matchIndex + 1}`;
+      match.phase = phase;
+      match.phaseRoundIndex = phaseRoundIndex;
+      match.bracketGroup = bracketGroup;
+      match.allowSingleAdvance = phase !== "direct";
+      match.seedA = match.playerA;
+      match.seedB = match.playerB;
+      return match;
+    }),
+  });
+
+  for (let roundIndex = 0; roundIndex < 2; roundIndex += 1) {
+    rounds.push(phaseRound(
+      "winner",
+      roundIndex,
+      size / 2 ** (roundIndex + 1),
+      `Vòng ${roundIndex + 1} - Nhánh thắng`,
+      "winner",
+      roundIndex === 0 ? slots : [],
+    ));
+  }
+  for (let roundIndex = 0; roundIndex < 2; roundIndex += 1) {
+    rounds.push(phaseRound(
+      "loser",
+      roundIndex,
+      size / 4,
+      `Vòng ${roundIndex + 1} - Nhánh thua`,
+      "loser",
+    ));
+  }
+
+  const directStart = rounds.length;
+  const directSize = size / 2;
+  const directRounds = buildSingleEliminationBracket(Array.from({ length: directSize }, () => null));
+  directRounds.forEach((round, roundIndex) => {
+    round.title = roundTitles(directSize)[roundIndex] || "Chung kết";
+    round.phase = "direct";
+    round.phaseRoundIndex = roundIndex;
+    round.matches.forEach((match, matchIndex) => {
+      match.id = `arena-direct-r${roundIndex + 1}m${matchIndex + 1}`;
+      match.phase = "direct";
+      match.phaseRoundIndex = roundIndex;
+      match.allowSingleAdvance = false;
+      match.roundIndex += directStart;
+      if (match.nextWin) match.nextWin.round += directStart;
+    });
+    rounds.push(round);
+  });
+
+  rounds[0].matches.forEach((match, index) => {
+    setMatchRoute(match, "nextWin", 1, Math.floor(index / 2), index % 2 ? "playerB" : "playerA");
+    setMatchRoute(match, "nextLoss", 2, Math.floor(index / 2), index % 2 ? "playerB" : "playerA");
+  });
+  rounds[1].matches.forEach((match, index) => {
+    setMatchRoute(match, "nextWin", directStart, index, "playerA");
+    setMatchRoute(match, "nextLoss", 3, index, "playerB");
+  });
+  rounds[2].matches.forEach((match, index) => setMatchRoute(match, "nextWin", 3, index, "playerA"));
+  rounds[3].matches.forEach((match, index) => setMatchRoute(match, "nextWin", directStart, index, "playerB"));
+  return rounds;
+}
+
 function recordStatsFromRounds(rounds = state.rounds) {
   const stats = new Map(state.players.map((player) => [player.name, { wins: 0, losses: 0, byes: 0, opponents: new Set() }]));
   rounds.forEach((round) => (round.matches || []).forEach((match) => {
@@ -1456,6 +1566,13 @@ function recalculateDoubleBracket() {
   const saved = new Map(state.rounds.flatMap((round) => round.matches).map((match) => [match.id, {
     playerA: match.playerA, playerB: match.playerB, scoreA: match.scoreA, scoreB: match.scoreB, status: match.status,
   }]));
+  const sourcesForSlot = (roundIndex, matchIndex, slot) => state.rounds.flatMap((round) => round.matches)
+    .filter((source) => [source.nextWin, source.nextLoss].some((route) => route?.round === roundIndex && route.match === matchIndex && route.slot === slot));
+  const isResolvedBye = (match) => {
+    const emptySlot = match.playerA ? "playerB" : "playerA";
+    const sources = sourcesForSlot(match.roundIndex, match.matchIndex, emptySlot);
+    return sources.length ? sources.every((source) => source.status === "done") : Boolean(match.allowSingleAdvance);
+  };
 
   for (let pass = 0; pass < state.rounds.length + 3; pass += 1) {
     state.rounds.forEach((round) => round.matches.forEach((match) => {
@@ -1481,10 +1598,10 @@ function recalculateDoubleBracket() {
       if (match.status === "done" && match.playerA && match.playerB && Number.isFinite(a) && Number.isFinite(b) && a !== b && match.scoreA !== "" && match.scoreB !== "") {
         winner = a > b ? match.playerA : match.playerB;
         loser = a > b ? match.playerB : match.playerA;
-      } else if ((match.bracketGroup === "winner" || match.allowSingleAdvance) && match.playerA && !match.playerB) {
+      } else if (match.playerA && !match.playerB && isResolvedBye(match)) {
         winner = match.playerA;
         match.scoreA = "W";
-      } else if ((match.bracketGroup === "winner" || match.allowSingleAdvance) && !match.playerA && match.playerB) {
+      } else if (!match.playerA && match.playerB && isResolvedBye(match)) {
         winner = match.playerB;
         match.scoreB = "W";
       }
@@ -1510,7 +1627,7 @@ function recalculateDoubleBracket() {
   }
 }
 
-function buildBracket(randomize = false) {
+function buildBracket(randomize = false, format = state.tournament.format || "arena") {
   if (!isAdmin) {
     return;
   }
@@ -1525,11 +1642,60 @@ function buildBracket(randomize = false) {
   }
 
   const bracketPlayers = randomize ? shuffledItems(state.players) : state.players;
-  state.rounds = [buildGroupedRound(bracketPlayers.map((player) => player.name), 0, randomize ? "random" : "ordered")];
+  const names = bracketPlayers.map((player) => player.name);
+  if (format === "arena") {
+    state.rounds = buildThreePhaseBracket(names, randomize);
+    recalculateDoubleBracket();
+  } else if (format === "single") {
+    state.rounds = buildSingleEliminationBracket(names);
+    state.rounds[0].matches.forEach((match) => {
+      if (match.status === "done" && match.winner) advanceWinner(match);
+    });
+  } else if (format === "double") {
+    const size = nextPowerOfTwo(names.length);
+    state.rounds = buildDiagramBracket(distributeDiagramSlots(names, size));
+    recalculateDoubleBracket();
+  } else {
+    state.rounds = [buildGroupedRound(names, 0, randomize ? "random" : "ordered")];
+  }
+  state.tournament.format = format;
   selectedDetailRoundIndex = 0;
   selectedBracketRoundIndex = 0;
   saveState();
   renderAll();
+}
+
+function changeDetailBracketPhase(phase, randomize = false) {
+  if (!["winner", "loser", "direct"].includes(phase)) return;
+  const entries = getTournamentEntries();
+  const entry = entries.find((item) => item.id === selectedTournamentId) || entries[0];
+  const sourceRounds = Array.isArray(entry?.rounds) ? entry.rounds : state.rounds;
+  const hasThreePhases = sourceRounds.some((round) => round.phase);
+  if (!hasThreePhases) {
+    if (!isAdmin || selectedTournamentId !== "current" || state.players.length < 2) return;
+    if (state.rounds.length && !confirm("Tạo sơ đồ ba giai đoạn sẽ thay thế sơ đồ và xóa kết quả hiện tại. Tiếp tục?")) return;
+    state.rounds = [];
+    state.tournament.format = "arena";
+    buildBracket(randomize, "arena");
+  } else if (randomize) {
+    if (!isAdmin || selectedTournamentId !== "current") return;
+    if (!confirm("Bốc thăm lại sẽ dựng lại cả ba giai đoạn và xóa kết quả hiện tại. Tiếp tục?")) return;
+    state.rounds = [];
+    buildBracket(true, "arena");
+  }
+  selectedDetailBracketPhase = phase;
+  const currentEntry = getTournamentEntries().find((item) => item.id === selectedTournamentId) || entry;
+  const phaseIndex = currentEntry?.rounds?.findIndex((round) => round.phase === phase) ?? -1;
+  selectedDetailRoundIndex = Math.max(0, phaseIndex);
+  selectedBracketRoundIndex = selectedDetailRoundIndex;
+  selectedTournamentDetailTab = "bracket";
+  if (isAdmin && selectedTournamentId === "current" && !hasThreePhases) {
+    saveState();
+    renderAll();
+  } else if (isAdmin && selectedTournamentId === "current" && randomize) {
+    saveState();
+    renderAll();
+  } else renderTournamentDirectory();
 }
 
 function autoAdvanceByes() {
@@ -1609,6 +1775,12 @@ function updateMatchPlayers(roundIndex, matchIndex, playerA, playerB) {
     });
     if ((playerA && usedByOtherMatches.has(playerA)) || (playerB && usedByOtherMatches.has(playerB))) {
       alert("Cơ thủ này đã được xếp ở trận khác trong cùng vòng.");
+      return;
+    }
+  } else {
+    const eligible = new Set(eligiblePlayersForBracketRound(roundIndex));
+    if ((playerA && !eligible.has(playerA)) || (playerB && !eligible.has(playerB))) {
+      alert("Chỉ có thể chọn cơ thủ đã vào vòng đấu này.");
       return;
     }
   }
@@ -1803,6 +1975,13 @@ function doubleBracketLayout() {
   return { winnerCount, loserCount, stepX, winnerHeight, loserTop, loserHeight, finalColumn };
 }
 
+function threePhaseBracketLayout() {
+  const firstWinnerMatches = state.rounds.find((round) => round.phase === "winner" && round.phaseRoundIndex === 0)?.matches.length || 1;
+  const loserTop = topOffset + firstWinnerMatches * rowHeight + 170;
+  const directRounds = state.rounds.filter((round) => round.phase === "direct").length;
+  return { loserTop, directColumn: 4, directRounds, stepX: cardWidth + gapX };
+}
+
 function diagramBracketLayout() {
   const winnerRoundCount = Math.floor((state.rounds.length - 1) / 2);
   const firstRoundMatches = state.rounds[0]?.matches.length || 1;
@@ -1871,6 +2050,16 @@ function groupedGroupPosition(roundIndex, groupIndex) {
 
 function matchPosition(roundIndex, matchIndex) {
   const round = state.rounds[roundIndex];
+  if (round?.phase) {
+    const layout = threePhaseBracketLayout();
+    const localRound = round.phaseRoundIndex || 0;
+    const isScopedPhase = activeBracketPhaseRender === round.phase;
+    const columnOffset = !isScopedPhase && round.phase === "direct" ? layout.directColumn : 0;
+    const yOffset = !isScopedPhase && round.phase === "loser" ? layout.loserTop : topOffset;
+    const spacing = round.phase === "loser" ? rowHeight : 2 ** localRound * rowHeight;
+    const center = yOffset + (matchIndex + 0.5) * spacing;
+    return { x: (columnOffset + localRound) * layout.stepX, y: center - cardHeight / 2, centerY: center };
+  }
   if (round?.bracketGroup?.startsWith("diagram-")) {
     const layout = diagramBracketLayout();
     let column;
@@ -1906,6 +2095,10 @@ function matchPosition(roundIndex, matchIndex) {
     return { x: roundIndex * (cardWidth + gapX), y: center - cardHeight / 2, centerY: center };
   }
   if (round?.bracketGroup === "single-elimination") {
+    if (round.fullBracket) {
+      const center = topOffset + (matchIndex + 0.5) * 2 ** roundIndex * rowHeight;
+      return { x: roundIndex * (cardWidth + gapX), y: center - cardHeight / 2, centerY: center };
+    }
     const matchesPerRow = Math.max(1, Math.ceil((round.matches?.length || 1) / 2));
     const localRoundIndex = roundIndex - bracketRenderRoundOffset;
     const column = matchIndex % matchesPerRow;
@@ -2016,6 +2209,14 @@ function bracketRoundTabLabel(round, roundIndex) {
   return title || `Vòng ${roundIndex + 1}`;
 }
 
+function bracketPhaseForRound(round) {
+  if (round?.phase) return round.phase;
+  if (["winner", "diagram-winner"].includes(round?.bracketGroup)) return "winner";
+  if (["loser", "diagram-loser"].includes(round?.bracketGroup)) return "loser";
+  if (["final", "diagram-grand"].includes(round?.bracketGroup)) return "direct";
+  return null;
+}
+
 function resetBracketScroll() {
   document.querySelector("#bracketCanvas")?.closest(".bracket-scroll")?.scrollTo({ left: 0, top: 0 });
 }
@@ -2027,6 +2228,23 @@ function renderBracketRoundTabs() {
     tabs.innerHTML = "";
     return;
   }
+  if (state.rounds.some((round) => bracketPhaseForRound(round))) {
+    const phases = [["winner", "Nhánh thắng"], ["loser", "Nhánh thua"], ["direct", "Loại trực tiếp"]];
+    tabs.classList.add("detail-bracket-phases");
+    tabs.innerHTML = phases.map(([phase, label]) => `
+      <button class="round-tab${phase === selectedDetailBracketPhase ? " active" : ""}" data-main-bracket-phase="${phase}" type="button" role="tab" aria-selected="${phase === selectedDetailBracketPhase}">${label}</button>
+    `).join("");
+    tabs.querySelectorAll("[data-main-bracket-phase]").forEach((button) => {
+      button.addEventListener("click", () => {
+        selectedDetailBracketPhase = button.dataset.mainBracketPhase;
+        selectedBracketRoundIndex = state.rounds.findIndex((round) => bracketPhaseForRound(round) === selectedDetailBracketPhase);
+        renderBracket(selectedDetailBracketPhase);
+        resetBracketScroll();
+      });
+    });
+    return;
+  }
+  tabs.classList.remove("detail-bracket-phases");
   selectedBracketRoundIndex = Math.min(Math.max(0, selectedBracketRoundIndex), state.rounds.length - 1);
   tabs.innerHTML = state.rounds
     .map((round, roundIndex) => `
@@ -2266,7 +2484,6 @@ function bindDetailTreeNavigation(scroll, canvas) {
     startY = event.clientY;
     startLeft = scroll.scrollLeft;
     startTop = scroll.scrollTop;
-    scroll.setPointerCapture?.(event.pointerId);
     scroll.classList.add("is-dragging");
   });
   scroll.addEventListener("pointermove", (event) => {
@@ -2274,6 +2491,7 @@ function bindDetailTreeNavigation(scroll, canvas) {
     const deltaX = event.clientX - startX;
     const deltaY = event.clientY - startY;
     if (!dragged && Math.hypot(deltaX, deltaY) < 5) return;
+    if (!dragged) scroll.setPointerCapture?.(event.pointerId);
     dragged = true;
     scroll.dataset.didDrag = "true";
     scroll.scrollLeft = startLeft - deltaX;
@@ -2282,7 +2500,7 @@ function bindDetailTreeNavigation(scroll, canvas) {
   const stopDragging = (event) => {
     if (!dragging) return;
     dragging = false;
-    scroll.releasePointerCapture?.(event.pointerId);
+    if (scroll.hasPointerCapture?.(event.pointerId)) scroll.releasePointerCapture(event.pointerId);
     scroll.classList.remove("is-dragging");
     setTimeout(() => delete scroll.dataset.didDrag, 0);
   };
@@ -2291,7 +2509,7 @@ function bindDetailTreeNavigation(scroll, canvas) {
   updateLabel();
 }
 
-function renderBracket() {
+function renderBracket(phaseFilter = null) {
   const canvas = document.querySelector("#bracketCanvas");
   const title = document.querySelector("#bracketTitle");
   if (!canvas) {
@@ -2317,7 +2535,9 @@ function renderBracket() {
     return;
   }
 
-  const isDoubleBracket = state.rounds.some((round) => round.bracketGroup === "winner" || round.bracketGroup === "loser" || round.bracketGroup === "final");
+  const hasThreePhases = state.rounds.some((round) => round.phase);
+  const hasPhaseBracket = state.rounds.some((round) => bracketPhaseForRound(round));
+  const isDoubleBracket = !hasThreePhases && state.rounds.some((round) => round.bracketGroup === "winner" || round.bracketGroup === "loser" || round.bracketGroup === "final");
   const isRecordBracket = state.rounds.some((round) => round.bracketGroup === "record" || round.bracketGroup === "record-final");
   const isDiagramBracket = state.rounds.some((round) => round.bracketGroup?.startsWith("diagram-"));
   const isGroupedBracket = state.rounds.some((round) => isGroupedRound(round));
@@ -2326,15 +2546,22 @@ function renderBracket() {
   const layout = isDoubleBracket ? doubleBracketLayout() : null;
   const diagramLayout = isDiagramBracket ? diagramBracketLayout() : null;
   const groupedLayout = isGroupedBracket ? groupedBracketLayout() : null;
-  const visibleRoundIndices = isGroupedBracket ? [selectedBracketRoundIndex] : state.rounds.map((_, index) => index);
+  const visibleRoundIndices = hasPhaseBracket && phaseFilter
+    ? state.rounds.map((round, index) => bracketPhaseForRound(round) === phaseFilter ? index : -1).filter((index) => index >= 0)
+    : isGroupedBracket ? [selectedBracketRoundIndex] : state.rounds.map((_, index) => index);
   bracketRenderRoundOffset = isGroupedBracket ? selectedBracketRoundIndex : 0;
+  activeBracketPhaseRender = hasPhaseBracket ? phaseFilter : null;
   canvas.classList.toggle("double-bracket", isDoubleBracket);
   canvas.classList.toggle("record-bracket", isRecordBracket);
   canvas.classList.toggle("diagram-bracket", isDiagramBracket);
   canvas.classList.toggle("grouped-bracket", isGroupedBracket && isGroupedRound(selectedVisibleRound));
   canvas.classList.toggle("single-elimination-bracket", isSingleEliminationView);
   const singleMatchesPerRow = isSingleEliminationView ? Math.max(1, Math.ceil((selectedVisibleRound.matches?.length || 1) / 2)) : 0;
-  canvas.style.minWidth = isDiagramBracket
+  canvas.style.minWidth = hasThreePhases
+    ? `${((phaseFilter ? visibleRoundIndices.length : 4 + threePhaseBracketLayout().directRounds) * threePhaseBracketLayout().stepX) + cardWidth}px`
+    : phaseFilter && hasPhaseBracket
+    ? `${Math.max(cardWidth, ...visibleRoundIndices.map((roundIndex) => matchPosition(roundIndex, 0).x + cardWidth))}px`
+    : isDiagramBracket
     ? `${diagramLayout.columns * diagramLayout.stepX + cardWidth}px`
     : isDoubleBracket
     ? `${(layout.finalColumn + 2) * layout.stepX + cardWidth}px`
@@ -2351,9 +2578,14 @@ function renderBracket() {
     ? groupedLayout.top + Math.max(...visibleRoundIndices.map((roundIndex) => Math.ceil(Math.max(1, state.rounds[roundIndex]?.groups?.length || 1) / groupedLayout.groupsPerRow))) * (groupedLayout.groupHeight + groupedLayout.groupGapY) + 24
     : 0;
   const singleEliminationHeight = isSingleEliminationView ? topOffset + 92 + Math.min(2, selectedVisibleRound.matches?.length || 1) * (cardHeight + 76) + 32 : 0;
-  canvas.style.height = `${Math.max(540, doubleHeight, recordHeight, groupedHeight, singleEliminationHeight, diagramLayout?.height || 0, topOffset + rowHeight * state.rounds[0].matches.length + 90)}px`;
+  const phaseHeight = hasThreePhases
+    ? phaseFilter
+      ? topOffset + rowHeight * Math.max(1, ...visibleRoundIndices.map((index) => state.rounds[index].matches.length)) + 110
+      : threePhaseBracketLayout().loserTop + rowHeight * Math.max(1, ...state.rounds.filter((round) => round.phase === "loser").map((round) => round.matches.length)) + 110
+    : 0;
+  canvas.style.height = `${Math.max(540, phaseHeight, doubleHeight, recordHeight, groupedHeight, singleEliminationHeight, diagramLayout?.height || 0, topOffset + rowHeight * state.rounds[0].matches.length + 90)}px`;
 
-  if (isDoubleBracket) {
+  if (isDoubleBracket && !phaseFilter) {
     const winnerZone = document.createElement("div");
     winnerZone.className = "bracket-zone winner-zone";
     winnerZone.style.height = `${layout.winnerHeight + 100}px`;
@@ -2406,7 +2638,9 @@ function renderBracket() {
     roundTitle.textContent = round.title.replace(/^Nhánh (thắng|thua) • /i, "");
     const titlePos = matchPosition(roundIndex, 0);
     roundTitle.style.left = `${titlePos.x}px`;
-    if (round.bracketGroup === "loser") roundTitle.style.top = `${layout.loserTop - 30}px`;
+    if (round.phase) {
+      roundTitle.style.top = activeBracketPhaseRender ? "8px" : `${round.phase === "loser" ? threePhaseBracketLayout().loserTop - 36 : 8}px`;
+    } else if (round.bracketGroup === "loser") roundTitle.style.top = `${layout.loserTop - 30}px`;
     if (round.bracketGroup === "final") roundTitle.style.top = "18px";
     if (round.bracketGroup === "record" || round.bracketGroup === "record-final") roundTitle.style.top = "54px";
     if (isGroupedRound(round)) {
@@ -2428,6 +2662,7 @@ function renderBracket() {
       const el = document.createElement("article");
       el.className = `match${round.bracketGroup ? ` bracket-${round.bracketGroup}` : ""}`;
       el.dataset.openMatchCamera = Number(match.table) || matchIndex + 1;
+      if (isAdmin) el.title = "Bấm vào cặp đấu để chọn hoặc đổi cơ thủ";
       el.dataset.matchLabel = `Tran ${match.matchIndex + 1}`;
       el.dataset.matchLive = isLiveMatch ? "true" : "false";
       el.dataset.matchStatus = match.status || "pending";
@@ -2454,8 +2689,10 @@ function renderBracket() {
       const winRoute = match.nextWin || (!round.bracketGroup && roundIndex < state.rounds.length - 1
         ? { round: roundIndex + 1, match: Math.floor(matchIndex / 2) }
         : null);
-      if (winRoute) {
-        const next = matchPosition(winRoute.round, winRoute.match);
+      const drawRoute = (route, routeClass) => {
+        if (!route) return;
+        if (phaseFilter && bracketPhaseForRound(state.rounds[route.round]) !== phaseFilter) return;
+        const next = matchPosition(route.round, route.match);
         const startX = pos.x + cardWidth;
         const midX = startX + gapX / 2;
         const endX = next.x;
@@ -2463,18 +2700,20 @@ function renderBracket() {
         const y2 = next.centerY;
 
         if (endX > startX) {
-          canvas.append(line("horizontal win-path", startX, y1, midX - startX, 1));
-          canvas.append(line("vertical win-path", midX, Math.min(y1, y2), 1, Math.abs(y2 - y1)));
-          canvas.append(line("horizontal win-path", midX, y2, endX - midX, 1));
+          canvas.append(line(`horizontal ${routeClass}`, startX, y1, midX - startX, 1));
+          canvas.append(line(`vertical ${routeClass}`, midX, Math.min(y1, y2), 1, Math.abs(y2 - y1)));
+          canvas.append(line(`horizontal ${routeClass}`, midX, y2, endX - midX, 1));
         } else if (next.x + cardWidth < pos.x) {
           const reverseStart = pos.x;
           const reverseEnd = next.x + cardWidth;
           const reverseMid = reverseStart - gapX / 2;
-          canvas.append(line("horizontal win-path", reverseMid, y1, reverseStart - reverseMid, 1));
-          canvas.append(line("vertical win-path", reverseMid, Math.min(y1, y2), 1, Math.abs(y2 - y1)));
-          canvas.append(line("horizontal win-path", reverseEnd, y2, reverseMid - reverseEnd, 1));
+          canvas.append(line(`horizontal ${routeClass}`, reverseMid, y1, reverseStart - reverseMid, 1));
+          canvas.append(line(`vertical ${routeClass}`, reverseMid, Math.min(y1, y2), 1, Math.abs(y2 - y1)));
+          canvas.append(line(`horizontal ${routeClass}`, reverseEnd, y2, reverseMid - reverseEnd, 1));
         }
-      }
+      };
+      drawRoute(winRoute, "win-path");
+      if (match.nextLoss) drawRoute(match.nextLoss, "drop-path");
     });
   });
 
@@ -3098,14 +3337,13 @@ function renderDetailBracket(entry) {
   if (selectedDetailRoundIndex >= rounds.length) {
     selectedDetailRoundIndex = Math.max(0, rounds.length - 1);
   }
-  const addRoundStatus = canManageBracket ? canAddGroupedRound() : { ok: false, message: "" };
+  const hasThreePhases = rounds.some((round) => round.phase);
+  const phaseRoundIndices = rounds.map((round, index) => round.phase === selectedDetailBracketPhase ? index : -1).filter((index) => index >= 0);
+  if (hasThreePhases && !phaseRoundIndices.includes(selectedDetailRoundIndex)) {
+    selectedDetailRoundIndex = phaseRoundIndices[0] ?? 0;
+  }
   const canCreateEmptyBracket = canManageBracket && players.length >= 2;
   const selectedRound = rounds[selectedDetailRoundIndex];
-  const selectedRoundMarkup = selectedRound
-    ? isGroupedRound(selectedRound) && Array.isArray(selectedRound.groups) && selectedRound.groups.length
-      ? selectedRound.groups.map((group) => renderDetailBracketStage(selectedRound, selectedDetailRoundIndex, group)).join("")
-      : renderDetailBracketStage(selectedRound, selectedDetailRoundIndex)
-    : "";
   const visiblePlayerNames = selectedRound?.sourcePlayers?.length
     ? selectedRound.sourcePlayers
     : players.map((player) => player.name);
@@ -3114,7 +3352,23 @@ function renderDetailBracket(entry) {
     <div class="round-tab-shell">
       <div class="round-tab-header">
         ${
-          rounds.length
+          hasThreePhases
+            ? `
+              <div class="detail-bracket-phases" role="tablist" aria-label="Các giai đoạn">
+                ${[["winner", "Nhánh thắng"], ["loser", "Nhánh thua"], ["direct", "Loại trực tiếp"]].map(([phase, label]) => `
+                  <button class="round-tab${phase === selectedDetailBracketPhase ? " active" : ""}" data-detail-bracket-phase="${phase}" type="button" role="tab" aria-selected="${phase === selectedDetailBracketPhase}">${label}</button>
+                `).join("")}
+              </div>
+            `
+            : canManageBracket
+            ? `
+              <div class="detail-bracket-phases" role="tablist" aria-label="Các giai đoạn">
+                ${[["winner", "Nhánh thắng"], ["loser", "Nhánh thua"], ["direct", "Loại trực tiếp"]].map(([phase, label]) => `
+                  <button class="round-tab${phase === selectedDetailBracketPhase ? " active" : ""}" data-detail-bracket-phase="${phase}" type="button" role="tab" aria-selected="${phase === selectedDetailBracketPhase}">${label}</button>
+                `).join("")}
+              </div>
+            `
+            : rounds.length
             ? `
               <div class="round-tab-list" role="tablist" aria-label="Các vòng đấu">
                 ${rounds.map((round, roundIndex) => `
@@ -3126,22 +3380,7 @@ function renderDetailBracket(entry) {
             `
             : `<div class="round-tab-list"><button class="round-tab active" type="button">Sơ đồ đấu</button></div>`
         }
-        ${
-          canManageBracket
-            ? `<div class="round-tab-actions">
-                <button class="secondary-action round-add-action" data-detail-add-round type="button" ${addRoundStatus.ok ? "" : "disabled"} title="${escapeHtml(addRoundStatus.message)}">Thêm vòng đấu</button>
-              </div>`
-            : ""
-        }
       </div>
-      ${
-        canManageBracket
-          ? `<div class="round-tab-secondary-actions">
-              <button class="secondary-action round-test-action" data-detail-fill-test-results type="button" ${rounds.length ? "" : "disabled"}>Điền kết quả test</button>
-              <button class="danger-action round-delete-action" data-detail-delete-round type="button" ${rounds.length ? "" : "disabled"}>Xóa vòng hiện tại</button>
-            </div>`
-          : ""
-      }
       ${
         canManageBracket
           ? `
@@ -3152,15 +3391,11 @@ function renderDetailBracket(entry) {
                   <h2>${visiblePlayerNames.length} cơ thủ</h2>
                 </div>
                 <div class="detail-bracket-actions">
-                  <button class="primary-action" data-randomize-bracket type="button">Chia bảng ngẫu nhiên</button>
-                  <button class="primary-action" data-detail-create-empty-bracket type="button" ${canCreateEmptyBracket ? "" : "disabled"} title="${canCreateEmptyBracket ? "Tạo bảng trống cho vòng đang chọn." : "Cần ít nhất 2 cơ thủ để tạo bảng trống."}">Tạo bảng trống</button>
+                  <button class="primary-action" data-randomize-bracket type="button" ${canCreateEmptyBracket ? "" : "disabled"}>Bốc thăm lại</button>
+                  <button class="secondary-action round-test-action" data-fill-bracket-test type="button" ${canManageBracket && rounds.length ? "" : "disabled"}>Điền kết quả test</button>
                 </div>
               </div>
-              ${
-                rounds.length
-                  ? `<div class="form-status" data-type="${addRoundStatus.ok ? "ok" : ""}">${escapeHtml(addRoundStatus.message || "Tạo vòng bảng để bắt đầu sơ đồ đấu.")}</div>`
-                  : ""
-              }
+              <div class="form-status">Chọn giai đoạn để xem các trận và nhánh tiến tiếp.</div>
               <div class="registered-player-grid">
                 ${
                   visiblePlayerNames.length
@@ -3178,8 +3413,6 @@ function renderDetailBracket(entry) {
               <button class="bracket-fit-toggle" data-detail-bracket-fit type="button">Thu vừa màn hình</button>
               <div class="bracket" id="detailBracketCanvas"></div>
             </div>`
-          : rounds.length
-          ? `<div class="history-rounds detail-rounds round-tab-panel">${selectedRoundMarkup}</div>`
           : `<div class="empty-state">Chưa có sơ đồ đấu cho giải này.</div>`
       }
     </div>
@@ -3284,7 +3517,7 @@ function renderTournamentDirectory() {
       state.rounds = Array.isArray(selectedEntry.rounds) ? selectedEntry.rounds : [];
     }
     try {
-      renderBracket();
+      renderBracket(selectedEntry.rounds?.some((round) => round.phase) ? selectedDetailBracketPhase : null);
     } finally {
       state.tournament = originalTournament;
       state.players = originalPlayers;
@@ -3297,6 +3530,14 @@ function renderTournamentDirectory() {
     }
     bindDetailTreeNavigation(detailTreeCanvas.closest(".bracket-scroll"), detailTreeCanvas);
     if (selectedEntry.isCurrent) {
+      detailTreeCanvas.addEventListener("click", (event) => {
+        if (!isAdmin || detailTreeCanvas.closest(".bracket-scroll")?.dataset.didDrag === "true") return;
+        if (event.target.closest("input, button, select, textarea")) return;
+        const matchCard = event.target.closest(".match[data-round][data-match]");
+        if (matchCard && detailTreeCanvas.contains(matchCard)) {
+          openMatchPairEditor(Number(matchCard.dataset.round), Number(matchCard.dataset.match));
+        }
+      });
       detailTreeCanvas.querySelectorAll(".score-input").forEach((input) => {
         input.addEventListener("change", () => {
           updateMatchScore(Number(input.dataset.round), Number(input.dataset.match), input.dataset.field, input.value.trim());
@@ -3324,10 +3565,15 @@ function renderTournamentDirectory() {
       renderTournamentDirectory();
     });
   });
+  reader.querySelectorAll("[data-detail-bracket-phase]").forEach((button) => {
+    button.addEventListener("click", () => changeDetailBracketPhase(button.dataset.detailBracketPhase));
+  });
   reader.querySelectorAll("[data-detail-round-tab]").forEach((button) => {
     button.addEventListener("click", () => {
       selectedDetailRoundIndex = Number(button.dataset.detailRoundTab) || 0;
       selectedBracketRoundIndex = selectedDetailRoundIndex;
+      const selectedRound = selectedEntry.rounds?.[selectedDetailRoundIndex];
+      if (selectedRound?.phase) selectedDetailBracketPhase = selectedRound.phase;
       selectedTournamentDetailTab = "bracket";
       renderTournamentDirectory();
     });
@@ -3338,18 +3584,12 @@ function renderTournamentDirectory() {
   reader.querySelector("#directoryRegistrationForm")?.addEventListener("submit", submitDirectoryRegistrationRequest);
   reader.querySelector("[data-delete-tournament]")?.addEventListener("click", deleteSelectedTournament);
   reader.querySelector("[data-randomize-bracket]")?.addEventListener("click", () => {
-    rebuildSelectedGroupedRound("random");
+    changeDetailBracketPhase(selectedDetailBracketPhase, true);
   });
-  reader.querySelector("[data-detail-add-round]")?.addEventListener("click", () => {
-    openAddRoundModal();
+  reader.querySelector("[data-fill-bracket-test]")?.addEventListener("click", () => {
+    if (state.rounds.some((round) => round.phase)) fillThreePhaseBracketTestResults();
+    else fillSelectedRoundTestResults();
   });
-  reader.querySelector("[data-detail-fill-test-results]")?.addEventListener("click", () => {
-    fillSelectedRoundTestResults();
-  });
-  reader.querySelector("[data-detail-create-empty-bracket]")?.addEventListener("click", () => {
-    createEmptyGroupedBracketFromDetail();
-  });
-  reader.querySelector("[data-detail-delete-round]")?.addEventListener("click", deleteSelectedDetailRound);
   reader.querySelectorAll("[data-open-match-camera]").forEach((button) => {
     button.addEventListener("click", () => {
       const liveInfo = button.querySelector("[data-live-match-info]");
@@ -3416,6 +3656,25 @@ function setTestMatchResult(match, preferredSlot = "A") {
   match.winner = winnerIsA ? match.playerA : match.playerB;
   match.status = "done";
   return true;
+}
+
+function fillThreePhaseBracketTestResults() {
+  if (!state.rounds.some((round) => round.phase)) return;
+  if (!confirm("Điền kết quả test sẽ ghi đè điểm và kết quả hiện tại của toàn bộ sơ đồ. Tiếp tục?")) return;
+
+  state.rounds.forEach((round) => {
+    recalculateDoubleBracket();
+    round.matches.forEach((match, matchIndex) => {
+      if (match.playerA && match.playerB && match.status !== "done") {
+        setTestMatchResult(match, matchIndex % 2 === 0 ? "A" : "B");
+      }
+    });
+  });
+  recalculateDoubleBracket();
+  saveState();
+  selectedTournamentDetailTab = "bracket";
+  renderAll();
+  setAdminNotice("Đã điền kết quả test cho cả ba giai đoạn.", "ok");
 }
 
 function fillSelectedRoundTestResults() {
@@ -4555,7 +4814,7 @@ function renderAll() {
   renderRegistration();
   renderPlayers();
   renderRegistrationRequests();
-  renderBracket();
+  renderBracket(state.rounds.some((round) => bracketPhaseForRound(round)) ? selectedDetailBracketPhase : null);
   renderSchedule();
   renderRanking();
   renderTournamentRanking();
@@ -4817,14 +5076,22 @@ function closeMatchPairEditor() {
   if (modal) modal.hidden = true;
 }
 
+function eligiblePlayersForBracketRound(roundIndex) {
+  const round = state.rounds[roundIndex];
+  if (!round) return [];
+  const names = isGroupedRound(round) && Array.isArray(round.sourcePlayers) && round.sourcePlayers.length
+    ? round.sourcePlayers
+    : (round.matches || []).flatMap((match) => [match.playerA, match.playerB]);
+  return [...new Set(names.filter(Boolean))];
+}
+
 function openMatchPairEditor(roundIndex, matchIndex) {
+  if (!isAdmin) return;
   const match = state.rounds[roundIndex]?.matches[matchIndex];
   const round = state.rounds[roundIndex];
   const modal = document.querySelector("#matchPairEditorModal");
   if (!match || !modal) return;
-  const eligibleNames = isGroupedRound(round) && Array.isArray(round.sourcePlayers) && round.sourcePlayers.length
-    ? round.sourcePlayers
-    : state.players.map((player) => player.name);
+  const eligibleNames = eligiblePlayersForBracketRound(roundIndex);
   const optionMarkup = (current) => [
     `<option value="">Chờ tự động</option>`,
     ...eligibleNames.map((name) => `<option value="${escapeHtml(name)}"${name === current ? " selected" : ""}>${escapeHtml(name)}</option>`),
@@ -4835,7 +5102,7 @@ function openMatchPairEditor(roundIndex, matchIndex) {
   document.querySelector("#matchPairPlayerA").innerHTML = optionMarkup(match.playerA);
   document.querySelector("#matchPairPlayerB").innerHTML = optionMarkup(match.playerB);
   const status = document.querySelector("#matchPairEditorStatus");
-  status.textContent = "Chọn hai cơ thủ hoặc để Chờ tự động.";
+  status.textContent = "Danh sách chỉ gồm cơ thủ đã vào vòng này. Chọn hai cơ thủ hoặc để Chờ tự động.";
   status.dataset.type = "";
   modal.hidden = false;
 }
@@ -4879,7 +5146,7 @@ function createNewTournamentFromModal(event) {
     ...createDefaultState().tournament,
     name,
     date: dateInput?.value || new Date().toISOString().slice(0, 10),
-    format: "single",
+    format: "arena",
   };
   state.players = [];
   state.registrationRequests = [];
@@ -5014,15 +5281,6 @@ function bindTournamentManager() {
   document.querySelector("#matchPairEditorModal")?.addEventListener("click", (event) => {
     if (event.target.id === "matchPairEditorModal") closeMatchPairEditor();
   });
-  document.querySelector("#addTournamentRound")?.addEventListener("click", openAddRoundModal);
-  document.querySelector("#addEmptyTournamentRound")?.addEventListener("click", createEmptyGroupedBracketFromDetail);
-  document.querySelector("#addRoundForm")?.addEventListener("submit", submitAddRound);
-  document.querySelector("#closeAddRound")?.addEventListener("click", closeAddRoundModal);
-  document.querySelector("#cancelAddRound")?.addEventListener("click", closeAddRoundModal);
-  document.querySelector("#addRoundModal")?.addEventListener("click", (event) => {
-    if (event.target.id === "addRoundModal") closeAddRoundModal();
-  });
-
   document.querySelector("#tournamentForm")?.addEventListener("submit", (event) => {
     event.preventDefault();
     state.tournament.name = document.querySelector("#tournamentName").value.trim() || "Ma Buu Billiards Tournament";

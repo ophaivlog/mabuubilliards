@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>Ma Buu Tournament Admin</title>
-    <link rel="stylesheet" href="styles.css?v=20260907-3" />
+    <link rel="stylesheet" href="styles.css?v=20260926-5" />
   </head>
   <body data-mode="admin" data-auth="locked">
     <section class="admin-login" id="adminLogin">
@@ -164,7 +164,10 @@
                 <p>ĐÃ ĐĂNG KÝ</p>
                 <h2 id="playerCountLabel">0 cơ thủ</h2>
               </div>
-              <button class="primary-action" id="generateBracket" type="button">Tạo bracket</button>
+              <div class="detail-bracket-actions">
+                <button class="secondary-action" id="openManualPairing" type="button">Xếp cặp thủ công</button>
+                <button class="primary-action" id="generateBracket" type="button">Tạo sơ đồ</button>
+              </div>
             </div>
             <div class="player-list" id="playerList"></div>
           </div>
@@ -588,31 +591,10 @@
       </form>
     </div>
 
-    <div class="modal-backdrop" id="addRoundModal" hidden>
-      <form class="modal-card" id="addRoundForm">
-        <div class="modal-heading">
-          <div><p>VÒNG TIẾP THEO</p><h2>Thêm vòng đấu</h2></div>
-          <button class="icon-action" id="closeAddRound" type="button" aria-label="Đóng">×</button>
-        </div>
-        <div class="form-status" id="addRoundStatus">Vòng mới sẽ lấy cơ thủ thắng từ vòng trước.</div>
-        <label>
-          Thể thức
-          <select id="addRoundFormat">
-            <option value="single">Loại trực tiếp</option>
-            <option value="grouped">2 mạng</option>
-          </select>
-        </label>
-        <div class="modal-actions">
-          <button class="secondary-action" id="cancelAddRound" type="button">Hủy</button>
-          <button class="primary-action" type="submit">Thêm vòng đấu</button>
-        </div>
-      </form>
-    </div>
-
     <script src="https://unpkg.com/ezuikit-js@8.1.14/ezuikit.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="supabase-config.js?v=20260524-2"></script>
-    <script src="script.js?v=20260907-26"></script>
+    <script src="script.js?v=20260926-12"></script>
   </body>
 </html>

@@ -2364,6 +2364,24 @@ main {
   gap: 8px;
 }
 
+.detail-bracket-phases {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+#bracketRoundTabs.detail-bracket-phases {
+  width: min(100%, 820px);
+  justify-content: center;
+  margin: 12px auto;
+}
+
+.detail-bracket-phases .round-tab {
+  min-width: 0;
+  flex: 1 1 210px;
+}
+
 .round-add-action {
   min-width: 164px;
   min-height: 40px;
