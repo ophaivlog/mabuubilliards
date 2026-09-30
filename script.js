@@ -467,11 +467,17 @@ function queueCloudSave() {
 }
 
 function startCloudAutoRefresh() {
-  if (isAdmin || !getSupabaseClient()) {
+  if (!getSupabaseClient()) {
     return;
   }
 
-  setInterval(loadCloudState, 10000);
+  setInterval(() => {
+    if (isAdmin && document.body.dataset.auth !== "unlocked") {
+      return;
+    }
+
+    loadCloudState();
+  }, 10000);
 }
 
 async function unlockAdmin(session = null) {
@@ -6449,6 +6455,7 @@ document.querySelector("#homePlayerSearch")?.addEventListener("input", (event) =
 
 if (isAdmin) {
   initAdminAuth();
+  startCloudAutoRefresh();
 } else {
   renderAll();
   loadCloudState();
