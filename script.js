@@ -5456,7 +5456,6 @@ function renderAll() {
   renderSchedule();
   renderRanking();
   renderAdminLoyalty();
-  renderPoints();
   renderTournamentRanking();
   renderContact();
   renderHistory();
