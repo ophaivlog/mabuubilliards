@@ -1,6 +1,3 @@
-const STORAGE_KEY = "maBuuTournament.v1";
-const LOYALTY_STORAGE_KEY = "maBuuLoyaltyMembers.v1";
-const LOYALTY_RECEIPTS_STORAGE_KEY = "maBuuLoyaltyReceipts.v1";
 const cardWidth = 320;
 const cardHeight = 128;
 const rowHeight = 148;
@@ -13,6 +10,7 @@ let activeTournamentLiveMatch = null;
 const isAdmin = document.body?.dataset.mode === "admin";
 let supabaseClient = null;
 let cloudSaveTimer = null;
+let cloudReady = false;
 let lastLocalEditAt = 0;
 let adminUnlockPromise = null;
 let unlockedAdminUserId = null;
@@ -89,16 +87,7 @@ function createDefaultState() {
 }
 
 function loadState() {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY));
-    return parsed?.tournament ? normalizeStateShape(parsed) : createDefaultState();
-  } catch (error) {
-    return createDefaultState();
-  }
-}
-
-function cacheState() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  return createDefaultState();
 }
 
 function normalizeStateShape(target) {
@@ -204,7 +193,11 @@ function saveState() {
     return;
   }
 
-  cacheState();
+  if (!navigator.onLine || !cloudReady) {
+    setCloudStatus("Cloud chưa kết nối; thay đổi chưa được lưu. Kết nối lại rồi thử lại.", "error");
+    return;
+  }
+
   queueCloudSave();
 }
 
@@ -322,7 +315,6 @@ function applyRemoteState(remoteState) {
   state.tournamentHistory = Array.isArray(remoteState.tournamentHistory) ? remoteState.tournamentHistory : [];
   state.rounds = Array.isArray(remoteState.rounds) ? remoteState.rounds : [];
   normalizeStateShape(state);
-  cacheState();
   renderAll();
   return true;
 }
@@ -331,8 +323,9 @@ async function loadCloudState() {
   const client = getSupabaseClient();
   const settings = getSupabaseSettings();
 
-  if (!client) {
-    setCloudStatus("Chưa cấu hình Supabase, đang dùng dữ liệu trên máy này.");
+  if (!navigator.onLine || !client) {
+    cloudReady = false;
+    setCloudStatus(!navigator.onLine ? "Không có kết nối mạng; dữ liệu cloud chưa tải được." : "Chưa cấu hình kết nối Supabase.", "error");
     return;
   }
 
@@ -355,12 +348,15 @@ async function loadCloudState() {
     }
 
     if (applyRemoteState(data?.data)) {
+      cloudReady = true;
       setCloudStatus("Đã đồng bộ dữ liệu từ Supabase.", "ok");
       return;
     }
 
+    cloudReady = true;
     setCloudStatus(isAdmin ? "Supabase chưa có dữ liệu, hãy tạo giải rồi lưu." : "Chưa có dữ liệu giải trên Supabase.");
   } catch (error) {
+    cloudReady = false;
     setCloudStatus(`Không tải được Supabase: ${error.message}`, "error");
   }
 }
@@ -369,8 +365,8 @@ async function saveCloudState() {
   const client = getSupabaseClient();
   const settings = getSupabaseSettings();
 
-  if (!client) {
-    setCloudStatus("Chưa cấu hình Supabase, dữ liệu mới chỉ lưu trên máy này.");
+  if (!navigator.onLine || !client || !cloudReady) {
+    setCloudStatus("Cloud chưa sẵn sàng; thay đổi chưa được lưu.", "error");
     return;
   }
 
@@ -498,6 +494,11 @@ async function unlockAdmin(session = null) {
     renderAll();
     await loadCloudState();
     await loadRegistrationRequests();
+    try {
+      await loadAdminLoyaltyCloud();
+    } catch (error) {
+      setAdminNotice(`Không tải được tích điểm từ cloud: ${error.message}`, "error");
+    }
     if (!isTypingInEditableField()) {
       renderAll();
     }
@@ -2877,42 +2878,81 @@ function keepActivePanelVisible() {
 }
 
 const DEFAULT_MINI_GAME_PRIZES = ["Giảm 10%", "Nước miễn phí", "Tặng 1 giờ bàn", "Chúc may mắn", "Giảm 20%", "Áo Ma Buu", "Voucher 50K", "Quay lại"];
-const MINI_GAME_PRIZES_KEY = "maBuuMiniGamePrizes";
-const MINI_GAME_HISTORY_KEY = "maBuuMiniGameHistory";
+let miniGamePrizes = [...DEFAULT_MINI_GAME_PRIZES];
+let miniGameHistory = [];
+let loyaltyMembers = [];
+let loyaltyReceipts = [];
+let miniGameCloudReady = false;
 let miniGameRotation = 0;
 let miniGameSpinning = false;
 
-function getMiniGamePrizes() {
-  try {
-    const saved = JSON.parse(localStorage.getItem(MINI_GAME_PRIZES_KEY) || "[]");
-    if (Array.isArray(saved)) {
-      const prizes = saved.map((item) => String(item || "").trim()).filter(Boolean);
-      if (prizes.length >= 2) {
-        return prizes;
-      }
-    }
-  } catch (error) {
-    // Ignore broken local storage and fall back to defaults.
-  }
-
-  return [...DEFAULT_MINI_GAME_PRIZES];
+async function requestSharedData(url, options = {}) {
+  if (!navigator.onLine) throw new Error("Không có kết nối mạng. Tính năng này chỉ hoạt động online.");
+  const response = await fetch(url, options);
+  const result = await response.json();
+  if (!response.ok || !result.ok) throw new Error(result.message || "Không đồng bộ được dữ liệu cloud.");
+  return result;
 }
 
-function saveMiniGamePrizes(prizes) {
-  localStorage.setItem(MINI_GAME_PRIZES_KEY, JSON.stringify(prizes));
+async function adminAuthorizationHeaders() {
+  const client = getSupabaseClient();
+  const { data, error } = await client?.auth.getSession() || {};
+  if (error) throw error;
+  const token = data?.session?.access_token;
+  if (!token) throw new Error("Vui lòng đăng nhập admin trước.");
+  return { Authorization: `Bearer ${token}` };
+}
+
+function normalizeMiniGameHistory(history) {
+  return (Array.isArray(history) ? history : []).map((item) => ({
+    ...item,
+    time: item.time || (item.spun_at ? new Date(item.spun_at).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }) : ""),
+  }));
+}
+
+async function loadMiniGameCloud() {
+  miniGameCloudReady = false;
+  const spinButton = document.querySelector("#spinPrizeWheel");
+  if (spinButton) spinButton.disabled = true;
+  try {
+    const data = await requestSharedData("/api/shared-data?type=mini-game");
+    miniGamePrizes = Array.isArray(data.prizes) && data.prizes.length >= 2 ? data.prizes : [...DEFAULT_MINI_GAME_PRIZES];
+    miniGameHistory = normalizeMiniGameHistory(data.history);
+    miniGameCloudReady = true;
+    if (spinButton) spinButton.disabled = false;
+    renderMiniGameWheel();
+  } catch (error) {
+    const result = document.querySelector("#miniGameResult");
+    if (result) result.textContent = `Không tải được dữ liệu mini game từ cloud: ${error.message}`;
+  }
+}
+
+function getMiniGamePrizes() {
+  return [...miniGamePrizes];
+}
+
+async function saveMiniGamePrizes(prizes, resetHistory = false) {
+  const headers = await adminAuthorizationHeaders();
+  const data = await requestSharedData("/api/shared-data", {
+    method: "POST",
+    headers: { ...headers, "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "save-mini-game", prizes, resetHistory }),
+  });
+  miniGamePrizes = data.prizes;
+  if (resetHistory) miniGameHistory = [];
 }
 
 function getMiniGameHistory() {
-  try {
-    const saved = JSON.parse(localStorage.getItem(MINI_GAME_HISTORY_KEY) || "[]");
-    return Array.isArray(saved) ? saved.slice(0, 8) : [];
-  } catch (error) {
-    return [];
-  }
+  return [...miniGameHistory];
 }
 
-function saveMiniGameHistory(history) {
-  localStorage.setItem(MINI_GAME_HISTORY_KEY, JSON.stringify(history.slice(0, 8)));
+async function saveMiniGameHistory(prize) {
+  const data = await requestSharedData("/api/shared-data", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "record-spin", prize }),
+  });
+  miniGameHistory = normalizeMiniGameHistory(data.history);
 }
 
 function renderMiniGameHistory() {
@@ -2975,9 +3015,16 @@ function bindMiniGame() {
     return;
   }
 
+  spinButton.disabled = true;
+  if (!isAdmin) {
+    input.readOnly = true;
+    saveButton.hidden = true;
+    resetButton.hidden = true;
+  }
+
   const readInputPrizes = () => input.value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
 
-  saveButton.addEventListener("click", () => {
+  saveButton.addEventListener("click", async () => {
     const prizes = readInputPrizes();
 
     if (prizes.length < 2) {
@@ -2985,32 +3032,58 @@ function bindMiniGame() {
       return;
     }
 
-    saveMiniGamePrizes(prizes);
-    renderMiniGameWheel();
-    result.textContent = "Đã lưu danh sách phần thưởng.";
+    saveButton.disabled = true;
+    try {
+      await saveMiniGamePrizes(prizes);
+      renderMiniGameWheel();
+      result.textContent = "Đã lưu danh sách phần thưởng lên cloud.";
+    } catch (error) {
+      result.textContent = error.message;
+    } finally {
+      saveButton.disabled = false;
+    }
   });
 
-  resetButton.addEventListener("click", () => {
-    saveMiniGamePrizes(DEFAULT_MINI_GAME_PRIZES);
-    saveMiniGameHistory([]);
+  resetButton.addEventListener("click", async () => {
+    resetButton.disabled = true;
+    try {
+      await saveMiniGamePrizes(DEFAULT_MINI_GAME_PRIZES, true);
+    } catch (error) {
+      result.textContent = error.message;
+      resetButton.disabled = false;
+      return;
+    }
     miniGameRotation = 0;
     renderMiniGameWheel();
-    result.textContent = "Đã nạp lại mẫu mặc định.";
+    result.textContent = "Đã nạp mẫu mặc định lên cloud.";
+    resetButton.disabled = false;
   });
 
-  spinButton.addEventListener("click", () => {
+  spinButton.addEventListener("click", async () => {
+    if (!miniGameCloudReady || !navigator.onLine) {
+      result.textContent = "Không có kết nối cloud. Vòng quay chỉ hoạt động online.";
+      return;
+    }
+
     if (miniGameSpinning) {
       return;
     }
 
-    const prizes = readInputPrizes();
+    const prizes = isAdmin ? readInputPrizes() : getMiniGamePrizes();
 
     if (prizes.length < 2) {
       result.textContent = "Cần ít nhất 2 ô phần thưởng để quay.";
       return;
     }
 
-    saveMiniGamePrizes(prizes);
+    if (isAdmin) {
+      try {
+        await saveMiniGamePrizes(prizes);
+      } catch (error) {
+        result.textContent = error.message;
+        return;
+      }
+    }
     renderMiniGameWheel();
 
     const step = 360 / prizes.length;
@@ -3023,16 +3096,18 @@ function bindMiniGame() {
     result.textContent = "Đang quay...";
     wheel.style.setProperty("--wheel-rotation", `${miniGameRotation}deg`);
 
-    window.setTimeout(() => {
+    window.setTimeout(async () => {
       const prize = prizes[winnerIndex];
-      const history = getMiniGameHistory();
-      const time = new Date().toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
-      history.unshift({ prize, time });
-      saveMiniGameHistory(history);
-      renderMiniGameHistory();
-      result.textContent = `Trúng: ${prize}`;
-      miniGameSpinning = false;
-      spinButton.disabled = false;
+      try {
+        await saveMiniGameHistory(prize);
+        renderMiniGameHistory();
+        result.textContent = `Trúng: ${prize}`;
+      } catch (error) {
+        result.textContent = `Trúng ${prize}, nhưng chưa lưu được lượt quay lên cloud: ${error.message}`;
+      } finally {
+        miniGameSpinning = false;
+        spinButton.disabled = false;
+      }
     }, 4300);
   });
 
@@ -4841,29 +4916,39 @@ function renderAdminLoyalty() {
 }
 
 function loadLoyaltyMembers() {
-  try {
-    const members = JSON.parse(localStorage.getItem(LOYALTY_STORAGE_KEY) || "[]");
-    return Array.isArray(members) ? members : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveLoyaltyMembers(members) {
-  localStorage.setItem(LOYALTY_STORAGE_KEY, JSON.stringify(members));
+  return loyaltyMembers;
 }
 
 function loadLoyaltyReceipts() {
-  try {
-    const receipts = JSON.parse(localStorage.getItem(LOYALTY_RECEIPTS_STORAGE_KEY) || "[]");
-    return Array.isArray(receipts) ? receipts : [];
-  } catch {
-    return [];
-  }
+  return loyaltyReceipts;
 }
 
-function saveLoyaltyReceipts(receipts) {
-  localStorage.setItem(LOYALTY_RECEIPTS_STORAGE_KEY, JSON.stringify(receipts));
+function normalizeCloudMember(member) {
+  return member ? {
+    phone: member.phone,
+    name: member.name,
+    points: Number(member.points) || 0,
+    createdAt: member.created_at || member.createdAt || "",
+  } : null;
+}
+
+function normalizeCloudReceipt(receipt) {
+  return {
+    invoiceNumber: receipt.invoice_number || receipt.invoiceNumber || "",
+    bidaPoolAmount: Number(receipt.points ?? receipt.bidaPoolAmount) || 0,
+    memberPhone: receipt.member_phone || receipt.memberPhone || "",
+    memberName: receipt.member_name || receipt.memberName || "",
+    usedAt: receipt.used_at || receipt.usedAt || "",
+  };
+}
+
+async function loadAdminLoyaltyCloud() {
+  if (!isAdmin) return;
+  const headers = await adminAuthorizationHeaders();
+  const data = await requestSharedData("/api/shared-data?type=admin-loyalty", { headers });
+  loyaltyMembers = (data.members || []).map(normalizeCloudMember);
+  loyaltyReceipts = (data.receipts || []).map(normalizeCloudReceipt);
+  renderAdminLoyalty();
 }
 
 function normalizeLoyaltyPhone(value) {
@@ -4922,7 +5007,7 @@ function bindLoyaltyForms() {
       : `<tr><td colspan="3">Chưa có biên lai nào được dùng.</td></tr>`;
   };
 
-  lookupForm.addEventListener("submit", (event) => {
+  lookupForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     const phone = normalizeLoyaltyPhone(lookupPhone.value);
     const notice = document.querySelector("#loyaltyNotice");
@@ -4935,19 +5020,32 @@ function bindLoyaltyForms() {
     }
 
     lookupPhone.value = phone;
-    const member = loadLoyaltyMembers().find((entry) => normalizeLoyaltyPhone(entry.phone) === phone);
-    notice.hidden = true;
-    if (member) {
-      showMember(member);
-      return;
-    }
-
-    hideMember();
-    registrationForm.hidden = false;
-    document.querySelector("#loyaltyNewPhone").value = phone;
-    document.querySelector("#loyaltyNewName").value = "";
-    notice.textContent = "Chưa có số điện thoại này. Nhập thông tin để tạo thành viên mới.";
+    const submitButton = lookupForm.querySelector("button[type='submit']");
+    submitButton.disabled = true;
+    notice.textContent = "Đang tra cứu trên cloud...";
     notice.hidden = false;
+    try {
+      const data = await requestSharedData(`/api/shared-data?type=loyalty&phone=${encodeURIComponent(phone)}`);
+      const member = normalizeCloudMember(data.member);
+      loyaltyMembers = member ? [member] : [];
+      loyaltyReceipts = (data.receipts || []).map(normalizeCloudReceipt);
+      notice.hidden = true;
+      if (member) {
+        showMember(member);
+      } else {
+        hideMember();
+        registrationForm.hidden = false;
+        document.querySelector("#loyaltyNewPhone").value = phone;
+        document.querySelector("#loyaltyNewName").value = "";
+        notice.textContent = "Chưa có số điện thoại này. Nhập thông tin để tạo thành viên mới.";
+        notice.hidden = false;
+      }
+    } catch (error) {
+      notice.textContent = `Không tra cứu được dữ liệu cloud: ${error.message}`;
+      notice.hidden = false;
+    } finally {
+      submitButton.disabled = false;
+    }
   });
 
   lookupPhone.addEventListener("input", () => {
@@ -4956,29 +5054,32 @@ function bindLoyaltyForms() {
     document.querySelector("#loyaltyNotice").hidden = true;
   });
 
-  registrationForm.addEventListener("submit", (event) => {
+  registrationForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     const phone = normalizeLoyaltyPhone(document.querySelector("#loyaltyNewPhone").value);
     const name = document.querySelector("#loyaltyNewName").value.trim();
-    const members = loadLoyaltyMembers();
-    const existing = members.find((entry) => normalizeLoyaltyPhone(entry.phone) === phone);
-    if (existing) {
-      lookupPhone.value = phone;
-      showMember(existing);
-      return;
-    }
     if (!name || phone.length < 9 || phone.length > 11) return;
-
-    const member = { phone, name, points: 0, createdAt: new Date().toISOString() };
-    members.push(member);
-    saveLoyaltyMembers(members);
-    registrationForm.hidden = true;
-    memberCard.hidden = true;
-    lookupPhone.value = "";
-    lookupPhone.focus();
     const notice = document.querySelector("#loyaltyNotice");
-    notice.textContent = "Đã thêm thành viên. Nhập lại số điện thoại để kiểm tra thông tin.";
-    notice.hidden = false;
+    const submitButton = registrationForm.querySelector("button[type='submit']");
+    submitButton.disabled = true;
+    try {
+      const data = await requestSharedData("/api/shared-data", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "register-member", phone, name }),
+      });
+      loyaltyMembers = [normalizeCloudMember(data.member)];
+      loyaltyReceipts = [];
+      showMember(loyaltyMembers[0]);
+      lookupPhone.value = phone;
+      notice.textContent = "Đã tạo thành viên trên cloud.";
+      notice.hidden = false;
+    } catch (error) {
+      notice.textContent = error.message;
+      notice.hidden = false;
+    } finally {
+      submitButton.disabled = false;
+    }
   });
 
   receiptInput.addEventListener("change", () => {
@@ -5152,11 +5253,10 @@ function bindLoyaltyForms() {
     validationNotice.hidden = false;
   }
 
-  confirmPointsButton.addEventListener("click", () => {
+  confirmPointsButton.addEventListener("click", async () => {
     if (confirmPointsButton.disabled) return;
     const phone = normalizeLoyaltyPhone(document.querySelector("#loyaltyMemberPhone").textContent);
-    const members = loadLoyaltyMembers();
-    const member = members.find((entry) => normalizeLoyaltyPhone(entry.phone) === phone);
+    const member = loadLoyaltyMembers().find((entry) => normalizeLoyaltyPhone(entry.phone) === phone);
     const invoice = window.loyaltyScannedInvoice;
     if (!member || !invoice) return;
 
@@ -5168,21 +5268,24 @@ function bindLoyaltyForms() {
       return;
     }
 
-    member.points = (Number(member.points) || 0) + validation.points;
-    saveLoyaltyMembers(members);
-    const receipts = loadLoyaltyReceipts();
-    receipts.push({
-      invoiceNumber: validation.invoiceNumber,
-      bidaPoolAmount: validation.points,
-      memberPhone: member.phone,
-      memberName: member.name,
-      usedAt: new Date().toISOString(),
-    });
-    saveLoyaltyReceipts(receipts);
-    document.querySelector("#loyaltyMemberPoints").textContent = member.points.toLocaleString("vi-VN");
-    validationNotice.textContent = `Đã cộng ${validation.points.toLocaleString("vi-VN")} điểm cho ${member.name}.`;
     confirmPointsButton.disabled = true;
-    renderLoyaltyReceipts(member.phone);
+    try {
+      const data = await requestSharedData("/api/shared-data", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "redeem-receipt", phone, invoice }),
+      });
+      const updatedMember = normalizeCloudMember(data.member);
+      const receipt = normalizeCloudReceipt(data.receipt);
+      loyaltyMembers = [updatedMember];
+      loyaltyReceipts = [receipt, ...loyaltyReceipts.filter((item) => item.invoiceNumber !== receipt.invoiceNumber)];
+      document.querySelector("#loyaltyMemberPoints").textContent = updatedMember.points.toLocaleString("vi-VN");
+      validationNotice.textContent = `Đã cộng ${validation.points.toLocaleString("vi-VN")} điểm cho ${updatedMember.name} trên cloud.`;
+      renderLoyaltyReceipts(updatedMember.phone);
+    } catch (error) {
+      validationNotice.textContent = error.message;
+      confirmPointsButton.disabled = false;
+    }
   });
 }
 
@@ -6445,13 +6548,11 @@ bindCameraSelector();
 document.addEventListener("focusin", markLocalEdit);
 document.addEventListener("input", markLocalEdit);
 document.addEventListener("change", markLocalEdit);
-window.addEventListener("storage", (event) => {
-  if ([LOYALTY_STORAGE_KEY, LOYALTY_RECEIPTS_STORAGE_KEY].includes(event.key)) renderAdminLoyalty();
-});
 document.querySelector("#homePlayerSearch")?.addEventListener("input", (event) => {
   renderHomePlayerList(event.target.value);
 });
 
+loadMiniGameCloud();
 if (isAdmin) {
   initAdminAuth();
   startCloudAutoRefresh();

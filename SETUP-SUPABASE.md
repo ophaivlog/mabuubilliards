@@ -100,3 +100,13 @@ window.MABUU_SUPABASE = {
 In Supabase, open Authentication > Users > Add user.
 
 Create one email/password account for the admin. Use that email/password on `admin.html`.
+
+## 5. Shared loyalty and mini-game data
+
+Run `SUPABASE-SHARED-DATA.sql` in the Supabase SQL Editor. This creates the cloud tables and the atomic receipt-redemption function. The tables are restricted to the server role; browser clients do not receive direct write access.
+
+Set `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` in the hosting provider's server environment (for example, Vercel Project Settings > Environment Variables), then create a new deployment. Never place the service-role key in `supabase-config.js` or browser code.
+
+- Prize configuration and spin history are shared between browsers; only a signed-in admin can change the prize list.
+- Loyalty members and receipts are stored in Supabase and loaded by phone number; the admin member list requires an admin session.
+- The previous localStorage records are no longer read. They are not automatically merged into the new cloud tables.
