@@ -353,7 +353,7 @@ async function loadCloudState() {
     }
 
     if (isTypingInEditableField()) {
-      setCloudStatus("Đang nhập, tạm hoãn đồng bộ Supabase để không mất nội dung.", "muted");
+      setCloudStatus("", "ok");
       return;
     }
 
@@ -4899,16 +4899,24 @@ function renderAdminLoyalty() {
   if (!membersBody || !historyBody) return;
 
   const members = loadLoyaltyMembers();
-  membersBody.innerHTML = members.length
-    ? members.map((member, index) => `
-        <tr>
+  const search = document.querySelector("#adminLoyaltySearch");
+  const query = (search?.value || "").trim().toLocaleLowerCase("vi");
+  const phoneQuery = query.replace(/\D/g, "");
+  const filteredMembers = members.filter((member) => {
+    const nameMatches = String(member.name || "").toLocaleLowerCase("vi").includes(query);
+    const phoneMatches = phoneQuery && String(member.phone || "").replace(/\D/g, "").includes(phoneQuery);
+    return nameMatches || phoneMatches;
+  });
+  membersBody.innerHTML = filteredMembers.length
+    ? filteredMembers.map((member, index) => `
+        <tr data-loyalty-member-phone="${escapeHtml(member.phone || "")}">
           <td>${index + 1}</td>
           <td>${escapeHtml(member.name || "-")}</td>
           <td>${escapeHtml(member.phone || "-")}</td>
           <td>${(Number(member.points) || 0).toLocaleString("vi-VN")}</td>
         </tr>
       `).join("")
-    : `<tr><td colspan="4">Chưa có thành viên.</td></tr>`;
+    : `<tr><td colspan="4">${members.length ? "Không tìm thấy thành viên phù hợp." : "Chưa có thành viên."}</td></tr>`;
 
   const receipts = [...loadLoyaltyReceipts()].reverse();
   historyBody.innerHTML = receipts.length
@@ -4964,6 +4972,96 @@ async function loadAdminLoyaltyCloud() {
   loyaltyMembers = (data.members || []).map(normalizeCloudMember);
   loyaltyReceipts = (data.receipts || []).map(normalizeCloudReceipt);
   renderAdminLoyalty();
+}
+
+function bindAdminLoyaltyContextMenu() {
+  const membersBody = document.querySelector("#adminLoyaltyMembersBody");
+  const menu = document.querySelector("#loyaltyMemberContextMenu");
+  const resetButton = document.querySelector("#resetMemberPointsAction");
+  if (!membersBody || !menu || !resetButton) return;
+
+  let selectedPhone = "";
+  let holdTimer = 0;
+  let holdStart = null;
+  let holdTriggered = false;
+  const clearHold = () => {
+    window.clearTimeout(holdTimer);
+    holdTimer = 0;
+    holdStart = null;
+  };
+  const openMenu = (row, clientX, clientY) => {
+    selectedPhone = row.dataset.loyaltyMemberPhone;
+    menu.hidden = false;
+    menu.style.left = `${Math.max(8, Math.min(clientX, window.innerWidth - menu.offsetWidth - 8))}px`;
+    menu.style.top = `${Math.max(8, Math.min(clientY, window.innerHeight - menu.offsetHeight - 8))}px`;
+  };
+
+  membersBody.addEventListener("contextmenu", (event) => {
+    const row = event.target.closest("tr[data-loyalty-member-phone]");
+    if (!row) return;
+    event.preventDefault();
+    openMenu(row, event.clientX, event.clientY);
+  });
+
+  membersBody.addEventListener("touchstart", (event) => {
+    const touch = event.touches[0];
+    const row = event.target.closest("tr[data-loyalty-member-phone]");
+    if (!touch || !row) return;
+    clearHold();
+    holdTriggered = false;
+    holdStart = { x: touch.clientX, y: touch.clientY };
+    holdTimer = window.setTimeout(() => {
+      holdTriggered = true;
+      openMenu(row, touch.clientX, touch.clientY);
+    }, 600);
+  }, { passive: true });
+
+  membersBody.addEventListener("touchmove", (event) => {
+    if (!holdStart || !event.touches[0]) return;
+    const touch = event.touches[0];
+    if (Math.hypot(touch.clientX - holdStart.x, touch.clientY - holdStart.y) > 10) clearHold();
+  }, { passive: true });
+
+  membersBody.addEventListener("touchend", clearHold, { passive: true });
+  membersBody.addEventListener("touchcancel", clearHold, { passive: true });
+  membersBody.addEventListener("click", (event) => {
+    if (!holdTriggered) return;
+    event.preventDefault();
+    event.stopPropagation();
+    holdTriggered = false;
+  }, true);
+
+  resetButton.addEventListener("click", async () => {
+    const member = loyaltyMembers.find((item) => item.phone === selectedPhone);
+    if (!member) return;
+    menu.hidden = true;
+    if (!confirm(`Xóa toàn bộ ${Number(member.points || 0).toLocaleString("vi-VN")} điểm của ${member.name}? Lịch sử hóa đơn được giữ nguyên.`)) return;
+
+    resetButton.disabled = true;
+    try {
+      const headers = await adminAuthorizationHeaders();
+      const data = await requestSharedData("/api/shared-data", {
+        method: "POST",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "reset-member-points", phone: member.phone }),
+      });
+      const updated = normalizeCloudMember(data.member);
+      loyaltyMembers = loyaltyMembers.map((item) => item.phone === updated.phone ? updated : item);
+      renderAdminLoyalty();
+      setAdminNotice(`Đã xóa điểm tích lũy của ${updated.name}.`, "ok");
+    } catch (error) {
+      setAdminNotice(`Không xóa được điểm: ${error.message}`, "error");
+    } finally {
+      resetButton.disabled = false;
+    }
+  });
+
+  document.addEventListener("click", (event) => {
+    if (!menu.contains(event.target)) menu.hidden = true;
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") menu.hidden = true;
+  });
 }
 
 function normalizeLoyaltyPhone(value) {
@@ -6554,6 +6652,7 @@ function bindCameraSelector() {
 
 bindTabs();
 bindAdminLoyaltyViews();
+bindAdminLoyaltyContextMenu();
 bindLoyaltyForms();
 bindBracketFit();
 bindMiniGame();
@@ -6567,6 +6666,7 @@ document.addEventListener("click", blockOfflineMutations, true);
 document.addEventListener("input", blockOfflineMutations, true);
 document.addEventListener("change", blockOfflineMutations, true);
 document.addEventListener("submit", blockOfflineMutations, true);
+document.querySelector("#adminLoyaltySearch")?.addEventListener("input", renderAdminLoyalty);
 document.querySelector("#homePlayerSearch")?.addEventListener("input", (event) => {
   renderHomePlayerList(event.target.value);
 });

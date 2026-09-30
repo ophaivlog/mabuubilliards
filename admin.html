@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>Ma Buu Tournament Admin</title>
-    <link rel="stylesheet" href="styles.css?v=20260930-17" />
+    <link rel="stylesheet" href="styles.css?v=20260930-18" />
   </head>
   <body data-mode="admin" data-auth="locked">
     <section class="admin-login" id="adminLogin">
@@ -261,6 +261,13 @@
           <section id="adminLoyaltyMembersView" class="loyalty-admin-view" role="tabpanel">
             <div class="section-heading">
               <div><h3>Danh sách thành viên</h3></div>
+            </div>
+            <div class="loyalty-member-search">
+              <label class="sr-only" for="adminLoyaltySearch">Tìm theo tên hoặc số điện thoại</label>
+              <input id="adminLoyaltySearch" type="search" autocomplete="off" placeholder="Tìm theo tên hoặc số điện thoại" />
+            </div>
+            <div id="loyaltyMemberContextMenu" class="loyalty-member-context-menu" role="menu" hidden>
+              <button id="resetMemberPointsAction" type="button" role="menuitem">Xóa điểm tích lũy</button>
             </div>
             <div class="table-wrap">
               <table class="data-table">
@@ -634,6 +641,6 @@
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="supabase-config.js?v=20260524-2"></script>
-    <script src="script.js?v=20260930-23"></script>
+    <script src="script.js?v=20260930-27"></script>
   </body>
 </html>

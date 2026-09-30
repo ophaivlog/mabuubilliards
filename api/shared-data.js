@@ -147,6 +147,19 @@ module.exports = async function handler(req, res) {
       return json(res, 200, { ok: true, prizes });
     }
 
+    if (body.action === "reset-member-points") {
+      if (!(await requireAdmin(req.headers.authorization))) return json(res, 401, { ok: false, message: "Cần đăng nhập admin để xóa điểm." });
+      const phone = normalizePhone(body.phone);
+      if (phone.length < 9 || phone.length > 11) return json(res, 400, { ok: false, message: "Số điện thoại không hợp lệ." });
+      const members = await request(`loyalty_members?phone=eq.${encodeURIComponent(phone)}`, {
+        method: "PATCH",
+        headers: { Prefer: "return=representation" },
+        body: JSON.stringify({ points: 0 }),
+      });
+      if (!members?.length) return json(res, 404, { ok: false, message: "Không tìm thấy thành viên." });
+      return json(res, 200, { ok: true, member: members[0] });
+    }
+
     return json(res, 400, { ok: false, message: "Thao tác không hợp lệ." });
   } catch (error) {
     const status = error.code === "23505" ? 409 : error.statusCode || 500;
