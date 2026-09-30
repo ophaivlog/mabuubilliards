@@ -4455,7 +4455,7 @@ code {
   padding: 0 10px;
   border: 0;
   border-radius: 4px;
-  background: transparent;
+  background: rgb(255 119 119 / 18%);
   color: var(--danger, #ff7777);
   text-align: left;
   font: inherit;
@@ -4464,7 +4464,7 @@ code {
 
 .loyalty-member-context-menu button:hover,
 .loyalty-member-context-menu button:focus-visible {
-  background: var(--surface-2);
+  background: rgb(255 119 119 / 30%);
 }
 
 .loyalty-admin-switch {
