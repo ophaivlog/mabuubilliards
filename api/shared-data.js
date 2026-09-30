@@ -93,7 +93,7 @@ module.exports = async function handler(req, res) {
       if (type === "admin-loyalty") {
         if (!(await requireAdmin(req.headers.authorization))) return json(res, 401, { ok: false, message: "Cần đăng nhập admin để xem dữ liệu thành viên." });
         const members = await request("loyalty_members?select=phone,name,points,created_at&order=created_at.desc");
-        const receipts = await request("loyalty_receipts?select=invoice_number,member_phone,member_name,points,used_at&order=used_at.desc&limit=1000");
+        const receipts = await request("loyalty_receipts?select=invoice_number,member_phone,member_name,points,used_at&order=used_at.desc&limit=10000");
         return json(res, 200, { ok: true, members: members || [], receipts: receipts || [] });
       }
       return json(res, 400, { ok: false, message: "Loại dữ liệu không hợp lệ." });

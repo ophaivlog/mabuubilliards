@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>Ma Buu Tournament Viewer</title>
-    <link rel="stylesheet" href="styles.css?v=20260930-20" />
+    <link rel="stylesheet" href="styles.css?v=20260930-22" />
   </head>
   <body data-mode="viewer">
     <header class="site-header">
@@ -304,7 +304,9 @@
                 <div><small>Họ và tên</small><strong id="loyaltyMemberName"></strong></div>
                 <div><small>Số điện thoại</small><strong id="loyaltyMemberPhone"></strong></div>
                 <div><small>Điểm tích lũy</small><strong id="loyaltyMemberPoints">0</strong></div>
-                <div><small>Hạng thành viên</small><strong><span id="loyaltyMemberRank" class="loyalty-rank loyalty-rank-bronze">Đồng</span></strong></div>
+                <div><small>Điểm trong 12 tháng</small><strong id="loyaltyMemberAnnualPoints">0</strong></div>
+                <div><small>Chi tiêu tương ứng</small><strong id="loyaltyMemberAnnualSpend">0 ₫</strong></div>
+                <div><small>Hạng thành viên</small><strong><span id="loyaltyMemberRank" class="loyalty-rank loyalty-rank-bronze"><span id="loyaltyMemberMedal" class="loyalty-rank-medal" aria-hidden="true">🥉</span><span id="loyaltyMemberRankName">Đồng</span></span></strong></div>
               </div>
               <form id="loyaltyReceiptForm" class="loyalty-form">
                 <label for="loyaltyReceipt">Tải biên lai chuyển khoản</label>
@@ -569,6 +571,6 @@
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="supabase-config.js?v=20260524-2"></script>
-    <script src="script.js?v=20260930-32"></script>
+    <script src="script.js?v=20260930-36"></script>
   </body>
 </html>

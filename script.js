@@ -4894,11 +4894,21 @@ function renderRanking() {
 
 function getLoyaltyRank(points) {
   const total = Math.max(0, Number(points) || 0);
-  if (total > 50000) return { name: "Kim cương", className: "diamond" };
-  if (total >= 35000) return { name: "Bạch kim", className: "platinum" };
-  if (total >= 20000) return { name: "Vàng", className: "gold" };
-  if (total >= 10000) return { name: "Bạc", className: "silver" };
-  return { name: "Đồng", className: "bronze" };
+  if (total >= 30000) return { name: "Kim cương", className: "diamond", medal: "💎" };
+  if (total >= 15000) return { name: "Bạch kim", className: "platinum", medal: "🏅" };
+  if (total >= 7000) return { name: "Vàng", className: "gold", medal: "🥇" };
+  if (total >= 3000) return { name: "Bạc", className: "silver", medal: "🥈" };
+  return { name: "Đồng", className: "bronze", medal: "🥉" };
+}
+
+function getLoyaltyPointsLast12Months(phone) {
+  const cutoff = Date.now() - 365 * 24 * 60 * 60 * 1000;
+  const normalizedPhone = normalizeLoyaltyPhone(phone);
+  return loadLoyaltyReceipts().reduce((total, receipt) => {
+    const usedAt = new Date(receipt.usedAt).getTime();
+    if (normalizeLoyaltyPhone(receipt.memberPhone) !== normalizedPhone || !Number.isFinite(usedAt) || usedAt < cutoff) return total;
+    return total + (Number(receipt.points) || 0);
+  }, 0);
 }
 
 function renderAdminLoyalty() {
@@ -4918,18 +4928,21 @@ function renderAdminLoyalty() {
   });
   membersBody.innerHTML = filteredMembers.length
     ? filteredMembers.map((member, index) => {
-        const rank = getLoyaltyRank(member.points);
+        const annualPoints = getLoyaltyPointsLast12Months(member.phone);
+        const rank = getLoyaltyRank(annualPoints);
+        const annualSpend = annualPoints * 1000;
         return `
           <tr data-loyalty-member-phone="${escapeHtml(member.phone || "")}">
             <td>${index + 1}</td>
             <td>${escapeHtml(member.name || "-")}</td>
             <td>${escapeHtml(member.phone || "-")}</td>
-            <td>${(Number(member.points) || 0).toLocaleString("vi-VN")}</td>
-            <td><span class="loyalty-rank loyalty-rank-${rank.className}">${rank.name}</span></td>
+            <td>${annualPoints.toLocaleString("vi-VN")}</td>
+            <td>${annualSpend.toLocaleString("vi-VN")} ₫</td>
+            <td><span class="loyalty-rank loyalty-rank-${rank.className}"><span class="loyalty-rank-medal" aria-hidden="true">${rank.medal}</span>${rank.name}</span></td>
           </tr>
         `;
       }).join("")
-    : `<tr><td colspan="5">${members.length ? "Không tìm thấy thành viên phù hợp." : "Chưa có thành viên."}</td></tr>`;
+    : `<tr><td colspan="6">${members.length ? "Không tìm thấy thành viên phù hợp." : "Chưa có thành viên."}</td></tr>`;
 
   const receipts = [...loadLoyaltyReceipts()].reverse();
   historyBody.innerHTML = receipts.length
@@ -5022,10 +5035,14 @@ function bindLoyaltyForms() {
     document.querySelector("#loyaltyMemberName").textContent = member.name;
     document.querySelector("#loyaltyMemberPhone").textContent = member.phone;
     document.querySelector("#loyaltyMemberPoints").textContent = (Number(member.points) || 0).toLocaleString("vi-VN");
-    const rank = getLoyaltyRank(member.points);
+    const annualPoints = getLoyaltyPointsLast12Months(member.phone);
+    document.querySelector("#loyaltyMemberAnnualPoints").textContent = annualPoints.toLocaleString("vi-VN");
+    document.querySelector("#loyaltyMemberAnnualSpend").textContent = `${(annualPoints * 1000).toLocaleString("vi-VN")} ₫`;
+    const rank = getLoyaltyRank(annualPoints);
     const rankBadge = document.querySelector("#loyaltyMemberRank");
-    rankBadge.textContent = rank.name;
     rankBadge.className = `loyalty-rank loyalty-rank-${rank.className}`;
+    document.querySelector("#loyaltyMemberMedal").textContent = rank.medal;
+    document.querySelector("#loyaltyMemberRankName").textContent = rank.name;
     renderLoyaltyReceipts(member.phone);
   };
 

@@ -813,7 +813,7 @@ main {
 .home-stat-grid {
   grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -4391,6 +4391,12 @@ code {
 .loyalty-rank-gold { color: #f0c44f; background: #39331e; }
 .loyalty-rank-platinum { color: #72d4c7; background: #203936; }
 .loyalty-rank-diamond { color: #78c8f4; background: #20333e; }
+
+.loyalty-rank-medal {
+  margin-right: 5px;
+  font-size: 16px;
+  line-height: 1;
+}
 
 .loyalty-notice {
   padding: 11px 13px;
