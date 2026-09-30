@@ -4892,6 +4892,15 @@ function renderRanking() {
     : `<tr><td colspan="7">Chưa có dữ liệu xếp hạng.</td></tr>`;
 }
 
+function getLoyaltyRank(points) {
+  const total = Math.max(0, Number(points) || 0);
+  if (total > 50000) return { name: "Kim cương", className: "diamond" };
+  if (total >= 35000) return { name: "Bạch kim", className: "platinum" };
+  if (total >= 20000) return { name: "Vàng", className: "gold" };
+  if (total >= 10000) return { name: "Bạc", className: "silver" };
+  return { name: "Đồng", className: "bronze" };
+}
+
 function renderAdminLoyalty() {
   if (!isAdmin) return;
   const membersBody = document.querySelector("#adminLoyaltyMembersBody");
@@ -4908,34 +4917,37 @@ function renderAdminLoyalty() {
     return nameMatches || phoneMatches;
   });
   membersBody.innerHTML = filteredMembers.length
-    ? filteredMembers.map((member, index) => `
-        <tr data-loyalty-member-phone="${escapeHtml(member.phone || "")}">
-          <td>${index + 1}</td>
-          <td>${escapeHtml(member.name || "-")}</td>
-          <td>${escapeHtml(member.phone || "-")}</td>
-          <td>${(Number(member.points) || 0).toLocaleString("vi-VN")}</td>
-        </tr>
-      `).join("")
-    : `<tr><td colspan="4">${members.length ? "Không tìm thấy thành viên phù hợp." : "Chưa có thành viên."}</td></tr>`;
+    ? filteredMembers.map((member, index) => {
+        const rank = getLoyaltyRank(member.points);
+        return `
+          <tr data-loyalty-member-phone="${escapeHtml(member.phone || "")}">
+            <td>${index + 1}</td>
+            <td>${escapeHtml(member.name || "-")}</td>
+            <td>${escapeHtml(member.phone || "-")}</td>
+            <td>${(Number(member.points) || 0).toLocaleString("vi-VN")}</td>
+            <td><span class="loyalty-rank loyalty-rank-${rank.className}">${rank.name}</span></td>
+          </tr>
+        `;
+      }).join("")
+    : `<tr><td colspan="5">${members.length ? "Không tìm thấy thành viên phù hợp." : "Chưa có thành viên."}</td></tr>`;
 
   const receipts = [...loadLoyaltyReceipts()].reverse();
   historyBody.innerHTML = receipts.length
     ? receipts.map((receipt, index) => {
         const usedAt = new Date(receipt.usedAt);
         const timestamp = Number.isNaN(usedAt.getTime()) ? "-" : usedAt.toLocaleString("vi-VN");
-        const points = Number(receipt.bidaPoolAmount) || 0;
+        const points = Number(receipt.points) || 0;
         return `
           <tr>
             <td>${index + 1}</td>
             <td>${escapeHtml(receipt.invoiceNumber || "-")}</td>
-            <td>${points.toLocaleString("vi-VN")} ₫</td>
             <td>${points.toLocaleString("vi-VN")}</td>
             <td>${escapeHtml(receipt.memberName || "-")}</td>
             <td>${escapeHtml(timestamp)}</td>
           </tr>
         `;
       }).join("")
-    : `<tr><td colspan="6">Chưa có lịch sử tích điểm.</td></tr>`;
+    : `<tr><td colspan="5">Chưa có lịch sử tích điểm.</td></tr>`;
 }
 
 function loadLoyaltyMembers() {
@@ -4958,7 +4970,7 @@ function normalizeCloudMember(member) {
 function normalizeCloudReceipt(receipt) {
   return {
     invoiceNumber: receipt.invoice_number || receipt.invoiceNumber || "",
-    bidaPoolAmount: Number(receipt.points ?? receipt.bidaPoolAmount) || 0,
+    points: Number(receipt.points) || 0,
     memberPhone: receipt.member_phone || receipt.memberPhone || "",
     memberName: receipt.member_name || receipt.memberName || "",
     usedAt: receipt.used_at || receipt.usedAt || "",
@@ -4972,96 +4984,6 @@ async function loadAdminLoyaltyCloud() {
   loyaltyMembers = (data.members || []).map(normalizeCloudMember);
   loyaltyReceipts = (data.receipts || []).map(normalizeCloudReceipt);
   renderAdminLoyalty();
-}
-
-function bindAdminLoyaltyContextMenu() {
-  const membersBody = document.querySelector("#adminLoyaltyMembersBody");
-  const menu = document.querySelector("#loyaltyMemberContextMenu");
-  const resetButton = document.querySelector("#resetMemberPointsAction");
-  if (!membersBody || !menu || !resetButton) return;
-
-  let selectedPhone = "";
-  let holdTimer = 0;
-  let holdStart = null;
-  let holdTriggered = false;
-  const clearHold = () => {
-    window.clearTimeout(holdTimer);
-    holdTimer = 0;
-    holdStart = null;
-  };
-  const openMenu = (row, clientX, clientY) => {
-    selectedPhone = row.dataset.loyaltyMemberPhone;
-    menu.hidden = false;
-    menu.style.left = `${Math.max(8, Math.min(clientX, window.innerWidth - menu.offsetWidth - 8))}px`;
-    menu.style.top = `${Math.max(8, Math.min(clientY, window.innerHeight - menu.offsetHeight - 8))}px`;
-  };
-
-  membersBody.addEventListener("contextmenu", (event) => {
-    const row = event.target.closest("tr[data-loyalty-member-phone]");
-    if (!row) return;
-    event.preventDefault();
-    openMenu(row, event.clientX, event.clientY);
-  });
-
-  membersBody.addEventListener("touchstart", (event) => {
-    const touch = event.touches[0];
-    const row = event.target.closest("tr[data-loyalty-member-phone]");
-    if (!touch || !row) return;
-    clearHold();
-    holdTriggered = false;
-    holdStart = { x: touch.clientX, y: touch.clientY };
-    holdTimer = window.setTimeout(() => {
-      holdTriggered = true;
-      openMenu(row, touch.clientX, touch.clientY);
-    }, 600);
-  }, { passive: true });
-
-  membersBody.addEventListener("touchmove", (event) => {
-    if (!holdStart || !event.touches[0]) return;
-    const touch = event.touches[0];
-    if (Math.hypot(touch.clientX - holdStart.x, touch.clientY - holdStart.y) > 10) clearHold();
-  }, { passive: true });
-
-  membersBody.addEventListener("touchend", clearHold, { passive: true });
-  membersBody.addEventListener("touchcancel", clearHold, { passive: true });
-  membersBody.addEventListener("click", (event) => {
-    if (!holdTriggered) return;
-    event.preventDefault();
-    event.stopPropagation();
-    holdTriggered = false;
-  }, true);
-
-  resetButton.addEventListener("click", async () => {
-    const member = loyaltyMembers.find((item) => item.phone === selectedPhone);
-    if (!member) return;
-    menu.hidden = true;
-    if (!confirm(`Xóa toàn bộ ${Number(member.points || 0).toLocaleString("vi-VN")} điểm của ${member.name}? Lịch sử hóa đơn được giữ nguyên.`)) return;
-
-    resetButton.disabled = true;
-    try {
-      const headers = await adminAuthorizationHeaders();
-      const data = await requestSharedData("/api/shared-data", {
-        method: "POST",
-        headers: { ...headers, "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "reset-member-points", phone: member.phone }),
-      });
-      const updated = normalizeCloudMember(data.member);
-      loyaltyMembers = loyaltyMembers.map((item) => item.phone === updated.phone ? updated : item);
-      renderAdminLoyalty();
-      setAdminNotice(`Đã xóa điểm tích lũy của ${updated.name}.`, "ok");
-    } catch (error) {
-      setAdminNotice(`Không xóa được điểm: ${error.message}`, "error");
-    } finally {
-      resetButton.disabled = false;
-    }
-  });
-
-  document.addEventListener("click", (event) => {
-    if (!menu.contains(event.target)) menu.hidden = true;
-  });
-  document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") menu.hidden = true;
-  });
 }
 
 function normalizeLoyaltyPhone(value) {
@@ -5100,6 +5022,10 @@ function bindLoyaltyForms() {
     document.querySelector("#loyaltyMemberName").textContent = member.name;
     document.querySelector("#loyaltyMemberPhone").textContent = member.phone;
     document.querySelector("#loyaltyMemberPoints").textContent = (Number(member.points) || 0).toLocaleString("vi-VN");
+    const rank = getLoyaltyRank(member.points);
+    const rankBadge = document.querySelector("#loyaltyMemberRank");
+    rankBadge.textContent = rank.name;
+    rankBadge.className = `loyalty-rank loyalty-rank-${rank.className}`;
     renderLoyaltyReceipts(member.phone);
   };
 
@@ -5113,7 +5039,7 @@ function bindLoyaltyForms() {
       ? [...receipts].reverse().map((receipt) => `
           <tr>
             <td>${escapeHtml(receipt.invoiceNumber)}</td>
-            <td>${Number(receipt.bidaPoolAmount || 0).toLocaleString("vi-VN")} ₫ (${Number(receipt.bidaPoolAmount || 0).toLocaleString("vi-VN")} điểm)</td>
+            <td>${Number(receipt.points || 0).toLocaleString("vi-VN")} điểm</td>
             <td>${escapeHtml(receipt.memberName || "-")}</td>
           </tr>
         `).join("")
@@ -5302,7 +5228,8 @@ function bindLoyaltyForms() {
     const bidaItem = (Array.isArray(invoice.items) ? invoice.items : []).find(
       (item) => normalizeLoyaltyText(item.name) === "bidapool",
     );
-    const points = parseLoyaltyAmount(bidaItem?.total_price);
+    const eligibleAmount = parseLoyaltyAmount(bidaItem?.total_price);
+    const points = eligibleAmount === null ? null : Math.round(eligibleAmount / 1000);
     if (!bidaItem) missing.push("mục BIDA POOL");
     else {
       if (bidaItem.quantity === null || bidaItem.quantity === undefined || !String(bidaItem.quantity).trim()) missing.push("số lượng BIDA POOL");
@@ -5361,7 +5288,7 @@ function bindLoyaltyForms() {
     confirmPointsButton.disabled = !validation.valid;
     confirmPointsButton.hidden = !validation.valid;
     validationNotice.textContent = validation.valid
-      ? `Biên lai hợp lệ. Sẽ cộng ${validation.points.toLocaleString("vi-VN")} điểm từ mục BIDA POOL.`
+      ? `Biên lai hợp lệ. Sẽ cộng ${validation.points.toLocaleString("vi-VN")} điểm (1.000đ = 1 điểm, làm tròn gần nhất) từ mục BIDA POOL.`
       : validation.problems.join(" ");
     validationNotice.hidden = false;
   }
@@ -5392,7 +5319,7 @@ function bindLoyaltyForms() {
       const receipt = normalizeCloudReceipt(data.receipt);
       loyaltyMembers = [updatedMember];
       loyaltyReceipts = [receipt, ...loyaltyReceipts.filter((item) => item.invoiceNumber !== receipt.invoiceNumber)];
-      document.querySelector("#loyaltyMemberPoints").textContent = updatedMember.points.toLocaleString("vi-VN");
+      showMember(updatedMember);
       validationNotice.textContent = `Đã cộng ${validation.points.toLocaleString("vi-VN")} điểm cho ${updatedMember.name} trên cloud.`;
       renderLoyaltyReceipts(updatedMember.phone);
     } catch (error) {
@@ -6652,7 +6579,6 @@ function bindCameraSelector() {
 
 bindTabs();
 bindAdminLoyaltyViews();
-bindAdminLoyaltyContextMenu();
 bindLoyaltyForms();
 bindBracketFit();
 bindMiniGame();

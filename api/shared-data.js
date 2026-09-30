@@ -64,7 +64,8 @@ function validateInvoice(invoice) {
   if (normalizeText(invoice?.store_name) !== "mabuubilliardsclub") throw Object.assign(new Error("Sai đơn vị quán trên biên lai."), { statusCode: 400 });
   if (!String(invoice?.date || "").trim() || !/^HD\d{6}$/i.test(number)) throw Object.assign(new Error("Thông tin ngày hoặc mã phiếu không hợp lệ."), { statusCode: 400 });
   const item = (Array.isArray(invoice?.items) ? invoice.items : []).find((row) => normalizeText(row?.name) === "bidapool");
-  const points = amount(item?.total_price);
+  const eligibleAmount = amount(item?.total_price);
+  const points = eligibleAmount === null ? null : Math.round(eligibleAmount / 1000);
   const unitPrice = amount(item?.unit_price);
   const total = amount(invoice.total_amount);
   if (!item || !String(item.quantity ?? "").trim() || unitPrice === null || unitPrice <= 0 || !points || points <= 0 || total === null || total <= 0) {

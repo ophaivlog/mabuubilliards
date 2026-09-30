@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>Ma Buu Tournament Admin</title>
-    <link rel="stylesheet" href="styles.css?v=20260930-18" />
+    <link rel="stylesheet" href="styles.css?v=20260930-20" />
   </head>
   <body data-mode="admin" data-auth="locked">
     <section class="admin-login" id="adminLogin">
@@ -266,12 +266,9 @@
               <label class="sr-only" for="adminLoyaltySearch">Tìm theo tên hoặc số điện thoại</label>
               <input id="adminLoyaltySearch" type="search" autocomplete="off" placeholder="Tìm theo tên hoặc số điện thoại" />
             </div>
-            <div id="loyaltyMemberContextMenu" class="loyalty-member-context-menu" role="menu" hidden>
-              <button id="resetMemberPointsAction" type="button" role="menuitem">Xóa điểm tích lũy</button>
-            </div>
             <div class="table-wrap">
               <table class="data-table">
-                <thead><tr><th>STT</th><th>Họ tên</th><th>Số điện thoại</th><th>Điểm tích lũy</th></tr></thead>
+                <thead><tr><th>STT</th><th>Họ tên</th><th>Số điện thoại</th><th>Điểm tích lũy</th><th>Hạng</th></tr></thead>
                 <tbody id="adminLoyaltyMembersBody"></tbody>
               </table>
             </div>
@@ -283,7 +280,7 @@
             </div>
             <div class="table-wrap">
               <table class="data-table">
-                <thead><tr><th>STT</th><th>Số phiếu</th><th>Số BIDA POOL</th><th>Tổng điểm</th><th>Họ tên</th><th>Thời gian tích điểm</th></tr></thead>
+                <thead><tr><th>STT</th><th>Số phiếu</th><th>Điểm cộng</th><th>Họ tên</th><th>Thời gian tích điểm</th></tr></thead>
                 <tbody id="adminLoyaltyHistoryBody"></tbody>
               </table>
             </div>
@@ -641,6 +638,6 @@
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="supabase-config.js?v=20260524-2"></script>
-    <script src="script.js?v=20260930-28"></script>
+    <script src="script.js?v=20260930-32"></script>
   </body>
 </html>

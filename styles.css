@@ -4359,7 +4359,7 @@ code {
 
 .loyalty-member-details {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px;
 }
 
@@ -4372,6 +4372,25 @@ code {
 .loyalty-member-details strong {
   overflow-wrap: anywhere;
 }
+
+.loyalty-rank {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 3px 9px;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.loyalty-rank-bronze { color: #d58a5b; background: #392a22; }
+.loyalty-rank-silver { color: #c3ccd5; background: #30353a; }
+.loyalty-rank-gold { color: #f0c44f; background: #39331e; }
+.loyalty-rank-platinum { color: #72d4c7; background: #203936; }
+.loyalty-rank-diamond { color: #78c8f4; background: #20333e; }
 
 .loyalty-notice {
   padding: 11px 13px;
@@ -4436,35 +4455,6 @@ code {
 .loyalty-member-search input:focus-visible {
   outline: 2px solid var(--mint);
   outline-offset: 2px;
-}
-
-.loyalty-member-context-menu {
-  position: fixed;
-  z-index: 1200;
-  min-width: 190px;
-  padding: 4px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--surface-1);
-  box-shadow: 0 10px 28px rgb(0 0 0 / 35%);
-}
-
-.loyalty-member-context-menu button {
-  width: 100%;
-  min-height: 38px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: 4px;
-  background: #482b30;
-  color: var(--danger, #ff7777);
-  text-align: left;
-  font: inherit;
-  cursor: pointer;
-}
-
-.loyalty-member-context-menu button:hover,
-.loyalty-member-context-menu button:focus-visible {
-  background: #60333a;
 }
 
 .loyalty-admin-switch {
