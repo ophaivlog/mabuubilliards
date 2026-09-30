@@ -1,4 +1,6 @@
 const STORAGE_KEY = "maBuuTournament.v1";
+const LOYALTY_STORAGE_KEY = "maBuuLoyaltyMembers.v1";
+const LOYALTY_RECEIPTS_STORAGE_KEY = "maBuuLoyaltyReceipts.v1";
 const cardWidth = 320;
 const cardHeight = 128;
 const rowHeight = 148;
@@ -40,6 +42,11 @@ let selectedTournamentId = "current";
 let selectedTournamentDetailTab = "info";
 let selectedDetailRoundIndex = 0;
 let selectedDetailBracketPhase = "winner";
+let selectedHistoryRoundIndex = 0;
+let selectedHistoryPhase = "winner";
+let selectedScheduleRoundIndex = 0;
+let selectedSchedulePhase = "winner";
+const historyListSelections = new Map();
 let activeBracketPhaseRender = null;
 let selectedBracketRoundIndex = 0;
 let bracketRenderRoundOffset = 0;
@@ -1956,7 +1963,7 @@ function playerRow(name, score, winner, roundIndex, matchIndex, field, record = 
     <div class="player ${winner ? "winner" : ""}">
       <span class="flag">★</span>
       <span class="avatar" aria-hidden="true"></span>
-      <span class="name">${escapeHtml(name || "Chờ xác định")}</span>
+      <span class="name">${escapeHtml(name || "Chờ xác định")}${winner ? `<span class="winner-crown" role="img" aria-label="Cơ thủ thắng" title="Cơ thủ thắng">♛</span>` : ""}</span>
       ${record ? `<span class="player-record">${escapeHtml(record)}</span>` : ""}
       ${scoreMarkup}
     </div>
@@ -2761,6 +2768,20 @@ function renderBracket(phaseFilter = null) {
   });
 }
 
+function bindAdminLoyaltyViews() {
+  const buttons = document.querySelectorAll("[data-admin-loyalty-view]");
+  const panels = document.querySelectorAll(".loyalty-admin-view");
+  buttons.forEach((button) => {
+    button.addEventListener("click", () => {
+      const selectedView = button.dataset.adminLoyaltyView;
+      buttons.forEach((item) => item.setAttribute("aria-selected", String(item === button)));
+      panels.forEach((panel) => {
+        panel.hidden = panel.id !== selectedView;
+      });
+    });
+  });
+}
+
 function bindTabs() {
   const buttons = document.querySelectorAll(".tab, .nav-submenu button, .camera-view-button");
   const topTabs = document.querySelectorAll(".tab");
@@ -3260,24 +3281,73 @@ function renderDetailRequestsAdmin(entry) {
 }
 
 function renderDetailHistory(entry) {
-  const matches = matchesForEntry(entry);
+  const rounds = Array.isArray(entry.rounds) ? entry.rounds : [];
+  const hasPhases = rounds.some((round) => bracketPhaseForRound(round));
+  const phases = [["winner", "Nhánh thắng"], ["loser", "Nhánh thua"], ["direct", "Loại trực tiếp"]];
+  const availablePhases = [...new Set(rounds.map(bracketPhaseForRound).filter(Boolean))];
+  if (hasPhases && !availablePhases.includes(selectedHistoryPhase)) {
+    selectedHistoryPhase = availablePhases[0] || "winner";
+    selectedHistoryRoundIndex = 0;
+  }
+  const visibleRounds = hasPhases
+    ? rounds.filter((round) => bracketPhaseForRound(round) === selectedHistoryPhase)
+    : rounds;
+  if (selectedHistoryRoundIndex >= visibleRounds.length) selectedHistoryRoundIndex = 0;
+  const selectedRound = visibleRounds[selectedHistoryRoundIndex];
+  const matches = selectedRound
+    ? (selectedRound.matches || []).map((match, index) => ({ ...match, matchIndex: match.matchIndex ?? index, roundTitle: selectedRound.title }))
+    : [];
+  const players = Array.isArray(entry.players) ? entry.players : [];
+  const playerRanks = new Map(players.map((player) => [player.name, player.rank || ""]));
 
   return `
+    <div class="history-browser">
+      ${hasPhases ? `
+        <div class="history-phase-tabs" role="tablist" aria-label="Chọn nhánh đấu">
+          ${phases.map(([phase, label]) => `
+            <button class="history-phase-tab${phase === selectedHistoryPhase ? " active" : ""}" data-history-phase="${phase}" type="button" role="tab" aria-selected="${phase === selectedHistoryPhase}">${label}</button>
+          `).join("")}
+        </div>
+      ` : ""}
+      ${visibleRounds.length ? `
+        <div class="history-round-tabs" role="tablist" aria-label="Chọn vòng đấu">
+          ${visibleRounds.map((round, index) => `
+            <button class="history-round-tab${index === selectedHistoryRoundIndex ? " active" : ""}" data-history-round="${index}" type="button" role="tab" aria-selected="${index === selectedHistoryRoundIndex}">${escapeHtml(round.title || `Vòng ${index + 1}`)}</button>
+          `).join("")}
+        </div>
+      ` : ""}
+    </div>
     <div class="history-match-list detail-match-list">
       ${
         matches.length
           ? matches
               .map(
                 (match) => `
-                  <article>
-                    <strong>${escapeHtml(match.roundTitle)} - Trận ${match.matchIndex + 1}</strong>
-                    <span>${escapeHtml(match.playerA || "TBD")} vs ${escapeHtml(match.playerB || "TBD")}</span>
-                    <small>Bàn ${String(match.table).padStart(2, "0")} • ${escapeHtml(match.scoreA || "-")} - ${escapeHtml(match.scoreB || "-")} • ${matchStatusLabel(match.status)}</small>
+                  <article class="history-match-card${match.status === "done" ? " is-complete" : ""}">
+                    <div class="history-match-status status-${escapeHtml(match.status || "pending")}">
+                      <strong>${String((match.matchIndex ?? 0) + 1).padStart(2, "0")}</strong>
+                      <span>${matchStatusLabel(match.status)}</span>
+                    </div>
+                    <div class="history-match-content">
+                      <div class="history-match-player side-a${match.winner === match.playerA ? " is-winner" : ""}">
+                        ${playerRanks.get(match.playerA) ? `<span class="history-player-rank">${escapeHtml(playerRanks.get(match.playerA))}</span>` : ""}
+                        <strong>${escapeHtml(match.playerA || "TBD")}</strong>
+                      </div>
+                      <div class="history-match-result">
+                        <small>Bàn ${String(match.table).padStart(2, "0")}</small>
+                        <div><b class="${match.winner === match.playerA ? "is-winner" : ""}">${escapeHtml(match.scoreA || "-")}</b><i>:</i><b class="${match.winner === match.playerB ? "is-winner" : ""}">${escapeHtml(match.scoreB || "-")}</b></div>
+                        <small>${escapeHtml(match.roundTitle || "")}</small>
+                      </div>
+                      <div class="history-match-player side-b${match.winner === match.playerB ? " is-winner" : ""}">
+                        <strong>${escapeHtml(match.playerB || "TBD")}</strong>
+                        ${playerRanks.get(match.playerB) ? `<span class="history-player-rank">${escapeHtml(playerRanks.get(match.playerB))}</span>` : ""}
+                      </div>
+                    </div>
                   </article>
                 `,
               )
               .join("")
-          : `<div class="empty-state">Chưa có lịch sử đấu cho giải này.</div>`
+          : `<div class="empty-state">${rounds.length ? "Chưa có trận đấu trong nhánh hoặc vòng này." : "Chưa có lịch sử đấu cho giải này."}</div>`
       }
     </div>
   `;
@@ -3408,9 +3478,8 @@ function renderDetailBracket(entry) {
           : ""
       }
       ${
-        rounds.length
+      rounds.length
           ? `<div class="bracket-scroll detail-tree-scroll" aria-label="Sơ đồ cây thi đấu có thể cuộn ngang">
-              <button class="bracket-fit-toggle" data-detail-bracket-fit type="button">Thu vừa màn hình</button>
               <div class="bracket" id="detailBracketCanvas"></div>
             </div>`
           : `<div class="empty-state">Chưa có sơ đồ đấu cho giải này.</div>`
@@ -3473,6 +3542,14 @@ function renderTournamentDirectory() {
         ["history", "Lịch sử đấu"],
         ["bracket", "Sơ đồ đấu"],
       ];
+  const detailTabIcons = {
+    info: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2m4 0h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg>',
+    players: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0M16 5.5a3 3 0 0 1 0 5.8M17 14a5 5 0 0 1 3.5 4.8"/></svg>',
+    requests: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v16H5zM8 8h8M8 12h5M8 16h3"/><path d="m15 15 2 2 4-4"/></svg>',
+    registration: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0M18 8v6m-3-3h6"/></svg>',
+    history: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+    bracket: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="6" height="5" rx="1"/><rect x="15" y="3" width="6" height="5" rx="1"/><rect x="9" y="16" width="6" height="5" rx="1"/><path d="M6 8v4h12V8m-6 4v4"/></svg>',
+  };
   if (!detailTabs.some(([id]) => id === selectedTournamentDetailTab)) {
     selectedTournamentDetailTab = "info";
   }
@@ -3499,7 +3576,7 @@ function renderTournamentDirectory() {
     </div>
     <div class="detail-tabs" role="tablist" aria-label="Chi tiết giải đấu">
       ${detailTabs
-        .map(([id, label]) => `<button class="detail-tab${selectedTournamentDetailTab === id ? " active" : ""}" data-detail-tab="${id}" type="button">${label}</button>`)
+        .map(([id, label]) => `<button class="detail-tab${selectedTournamentDetailTab === id ? " active" : ""}" data-detail-tab="${id}" type="button">${detailTabIcons[id]}<span>${label}</span></button>`)
         .join("")}
     </div>
     <div class="detail-panel">${detailContent[selectedTournamentDetailTab] || detailContent.info}</div>
@@ -3575,6 +3652,19 @@ function renderTournamentDirectory() {
       const selectedRound = selectedEntry.rounds?.[selectedDetailRoundIndex];
       if (selectedRound?.phase) selectedDetailBracketPhase = selectedRound.phase;
       selectedTournamentDetailTab = "bracket";
+      renderTournamentDirectory();
+    });
+  });
+  reader.querySelectorAll("[data-history-phase]").forEach((button) => {
+    button.addEventListener("click", () => {
+      selectedHistoryPhase = button.dataset.historyPhase;
+      selectedHistoryRoundIndex = 0;
+      renderTournamentDirectory();
+    });
+  });
+  reader.querySelectorAll("[data-history-round]").forEach((button) => {
+    button.addEventListener("click", () => {
+      selectedHistoryRoundIndex = Number(button.dataset.historyRound) || 0;
       renderTournamentDirectory();
     });
   });
@@ -4210,18 +4300,43 @@ function renderHistory() {
     return;
   }
 
+  const expandedEntryIds = new Set(
+    [...list.querySelectorAll(".history-item[open]")].map((item) => item.dataset.historyEntryKey),
+  );
+
   list.innerHTML = state.tournamentHistory
     .map((entry, index) => {
       const tournament = entry.tournament || {};
       const players = Array.isArray(entry.players) ? entry.players : [];
       const rounds = Array.isArray(entry.rounds) ? entry.rounds : [];
-      const matches = rounds.flatMap((round) => (round.matches || []).map((match) => ({ ...match, roundTitle: round.title })));
-      const doneMatches = entry.stats?.doneMatches ?? matches.filter((match) => match.status === "done").length;
-      const totalMatches = entry.stats?.matches ?? matches.length;
-      const openAttr = index === 0 ? " open" : "";
+      const entryKey = String(entry.id ?? index);
+      const phases = [["winner", "Nhánh thắng"], ["loser", "Nhánh thua"], ["direct", "Loại trực tiếp"]];
+      const availablePhases = [...new Set(rounds.map(bracketPhaseForRound).filter(Boolean))];
+      const hasPhases = availablePhases.length > 0;
+      const selection = historyListSelections.get(entryKey) || { phase: availablePhases[0] || "winner", roundIndex: 0 };
+      if (hasPhases && !availablePhases.includes(selection.phase)) {
+        selection.phase = availablePhases[0];
+        selection.roundIndex = 0;
+      }
+      const visibleRounds = hasPhases
+        ? rounds.filter((round) => bracketPhaseForRound(round) === selection.phase)
+        : rounds;
+      if (selection.roundIndex >= visibleRounds.length) selection.roundIndex = 0;
+      historyListSelections.set(entryKey, selection);
+      const selectedRound = visibleRounds[selection.roundIndex];
+      const allEntryMatches = rounds.flatMap((round) => round.matches || []);
+      const matches = selectedRound
+        ? (selectedRound.matches || []).map((match, matchIndex) => ({ ...match, matchIndex: match.matchIndex ?? matchIndex, roundTitle: selectedRound.title }))
+        : [];
+      const playerRanks = new Map(players.map((player) => [player.name, player.rank || ""]));
+      const doneMatches = entry.stats?.doneMatches ?? allEntryMatches.filter((match) => match.status === "done").length;
+      const totalMatches = entry.stats?.matches ?? allEntryMatches.length;
+      const openAttr = expandedEntryIds.size
+        ? (expandedEntryIds.has(entryKey) ? " open" : "")
+        : (index === 0 ? " open" : "");
 
       return `
-        <details class="history-item"${openAttr}>
+        <details class="history-item" data-history-entry-key="${escapeHtml(entryKey)}"${openAttr}>
           <summary>
             <div>
               <strong>${escapeHtml(tournament.name || "Giải đấu chưa đặt tên")}</strong>
@@ -4242,23 +4357,53 @@ function renderHistory() {
             </div>
             <div class="history-block">
               <h3>Lịch đấu</h3>
+              <div class="history-browser" data-history-entry="${escapeHtml(entryKey)}">
+                ${hasPhases ? `
+                  <div class="history-phase-tabs" role="tablist" aria-label="Chọn nhánh đấu">
+                    ${phases.map(([phase, label]) => `
+                      <button class="history-phase-tab${phase === selection.phase ? " active" : ""}" data-history-list-phase="${phase}" type="button" role="tab" aria-selected="${phase === selection.phase}">${label}</button>
+                    `).join("")}
+                  </div>
+                ` : ""}
+                ${visibleRounds.length ? `
+                  <div class="history-round-tabs" role="tablist" aria-label="Chọn vòng đấu">
+                    ${visibleRounds.map((round, roundIndex) => `
+                      <button class="history-round-tab${roundIndex === selection.roundIndex ? " active" : ""}" data-history-list-round="${roundIndex}" type="button" role="tab" aria-selected="${roundIndex === selection.roundIndex}">${escapeHtml(round.title || `Vòng ${roundIndex + 1}`)}</button>
+                    `).join("")}
+                  </div>
+                ` : ""}
+              </div>
               <div class="history-match-list">
                 ${
                   matches.length
                     ? matches
                         .map(
                           (match) => `
-                            <article>
-                              <strong>${escapeHtml(match.roundTitle)} - Trận ${match.matchIndex + 1}</strong>
-                              <span>${escapeHtml(match.playerA || "TBD")} vs ${escapeHtml(match.playerB || "TBD")}</span>
-                              <small>Bàn ${String(match.table).padStart(2, "0")} • ${escapeHtml(match.scoreA || "-")} - ${escapeHtml(match.scoreB || "-")} • ${
-                                matchStatusLabel(match.status)
-                              }</small>
+                            <article class="history-match-card${match.status === "done" ? " is-complete" : ""}">
+                              <div class="history-match-status status-${escapeHtml(match.status || "pending")}">
+                                <strong>${String((match.matchIndex ?? 0) + 1).padStart(2, "0")}</strong>
+                                <span>${matchStatusLabel(match.status)}</span>
+                              </div>
+                              <div class="history-match-content">
+                                <div class="history-match-player side-a${match.winner === match.playerA ? " is-winner" : ""}">
+                                  ${playerRanks.get(match.playerA) ? `<span class="history-player-rank">${escapeHtml(playerRanks.get(match.playerA))}</span>` : ""}
+                                  <strong>${escapeHtml(match.playerA || "TBD")}</strong>
+                                </div>
+                                <div class="history-match-result">
+                                  <small>Bàn ${String(match.table).padStart(2, "0")}</small>
+                                  <div><b class="${match.winner === match.playerA ? "is-winner" : ""}">${escapeHtml(match.scoreA || "-")}</b><i>:</i><b class="${match.winner === match.playerB ? "is-winner" : ""}">${escapeHtml(match.scoreB || "-")}</b></div>
+                                  <small>${escapeHtml(match.roundTitle || "")}</small>
+                                </div>
+                                <div class="history-match-player side-b${match.winner === match.playerB ? " is-winner" : ""}">
+                                  <strong>${escapeHtml(match.playerB || "TBD")}</strong>
+                                  ${playerRanks.get(match.playerB) ? `<span class="history-player-rank">${escapeHtml(playerRanks.get(match.playerB))}</span>` : ""}
+                                </div>
+                              </div>
                             </article>
                           `,
                         )
                         .join("")
-                    : `<div class="empty-state">Chưa có lịch đấu.</div>`
+                    : `<div class="empty-state">${rounds.length ? "Chưa có trận đấu trong nhánh hoặc vòng này." : "Chưa có lịch đấu."}</div>`
                 }
               </div>
             </div>
@@ -4295,6 +4440,28 @@ function renderHistory() {
       `;
     })
     .join("");
+
+  list.querySelectorAll("[data-history-list-phase]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const entryKey = button.closest("[data-history-entry]")?.dataset.historyEntry;
+      const selection = historyListSelections.get(entryKey);
+      if (!selection) return;
+      selection.phase = button.dataset.historyListPhase;
+      selection.roundIndex = 0;
+      historyListSelections.set(entryKey, selection);
+      renderHistory();
+    });
+  });
+  list.querySelectorAll("[data-history-list-round]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const entryKey = button.closest("[data-history-entry]")?.dataset.historyEntry;
+      const selection = historyListSelections.get(entryKey);
+      if (!selection) return;
+      selection.roundIndex = Number(button.dataset.historyListRound) || 0;
+      historyListSelections.set(entryKey, selection);
+      renderHistory();
+    });
+  });
 }
 
 function allMatches() {
@@ -4485,32 +4652,113 @@ function collectRankingRows() {
 }
 
 function renderSchedule() {
-  const body = document.querySelector("#scheduleBody");
-  if (!body) {
+  const container = document.querySelector("#scheduleHistory");
+  if (!container) {
+    const body = document.querySelector("#scheduleBody");
+    if (!body) return;
+    const matches = allMatches();
+    body.innerHTML = matches.length
+      ? matches.map((match) => `
+          <tr>
+            <td>${escapeHtml(match.roundTitle)}</td>
+            <td>${match.matchIndex + 1}</td>
+            <td>${escapeHtml(match.time || "Chưa xếp")}</td>
+            <td>Bàn ${String(match.table).padStart(2, "0")}</td>
+            <td>${escapeHtml(match.playerA || "TBD")} vs ${escapeHtml(match.playerB || "TBD")}</td>
+            <td>${escapeHtml(match.scoreA || "-")} - ${escapeHtml(match.scoreB || "-")}</td>
+            <td>${matchStatusLabel(match.status)}</td>
+          </tr>
+        `).join("")
+      : `<tr><td colspan="7">Chưa có lịch. Hãy tạo bracket trước.</td></tr>`;
     return;
   }
 
-  const matches = allMatches();
-  if (!matches.length) {
-    body.innerHTML = `<tr><td colspan="7">Chưa có lịch. Hãy tạo bracket trước.</td></tr>`;
+  const rounds = Array.isArray(state.rounds) ? state.rounds : [];
+  const phases = [["winner", "Nhánh thắng"], ["loser", "Nhánh thua"], ["direct", "Loại trực tiếp"]];
+  const availablePhases = [...new Set(rounds.map(bracketPhaseForRound).filter(Boolean))];
+  const hasPhases = availablePhases.length > 0;
+  if (hasPhases && !availablePhases.includes(selectedSchedulePhase)) {
+    selectedSchedulePhase = availablePhases[0];
+    selectedScheduleRoundIndex = 0;
+  }
+  const visibleRounds = hasPhases
+    ? rounds.filter((round) => bracketPhaseForRound(round) === selectedSchedulePhase)
+    : rounds;
+  if (selectedScheduleRoundIndex >= visibleRounds.length) selectedScheduleRoundIndex = 0;
+  const selectedRound = visibleRounds[selectedScheduleRoundIndex];
+  const matches = selectedRound
+    ? (selectedRound.matches || []).map((match, index) => ({
+        ...match,
+        matchIndex: match.matchIndex ?? index,
+        roundTitle: selectedRound.title || `Vòng ${selectedScheduleRoundIndex + 1}`,
+      }))
+    : [];
+
+  if (!rounds.length) {
+    container.innerHTML = `<div class="empty-state">Chưa có lịch. Hãy tạo bracket trước.</div>`;
     return;
   }
 
-  body.innerHTML = matches
-    .map(
-      (match) => `
-        <tr>
-          <td>${escapeHtml(match.roundTitle)}</td>
-          <td>${match.matchIndex + 1}</td>
-          <td>${escapeHtml(match.time || "Chưa xếp")}</td>
-          <td>Bàn ${String(match.table).padStart(2, "0")}</td>
-          <td>${escapeHtml(match.playerA || "TBD")} vs ${escapeHtml(match.playerB || "TBD")}</td>
-          <td>${escapeHtml(match.scoreA || "-")} - ${escapeHtml(match.scoreB || "-")}</td>
-          <td>${matchStatusLabel(match.status)}</td>
-        </tr>
-      `,
-    )
-    .join("");
+  const playerRanks = new Map((state.players || []).map((player) => [player.name, player.rank || ""]));
+  container.innerHTML = `
+    <div class="history-browser">
+      ${hasPhases ? `
+        <div class="history-phase-tabs" role="tablist" aria-label="Chọn nhánh đấu">
+          ${phases.map(([phase, label]) => `
+            <button class="history-phase-tab${phase === selectedSchedulePhase ? " active" : ""}" data-schedule-phase="${phase}" type="button" role="tab" aria-selected="${phase === selectedSchedulePhase}" ${availablePhases.includes(phase) ? "" : "disabled"}>${label}</button>
+          `).join("")}
+        </div>
+      ` : ""}
+      ${visibleRounds.length ? `
+        <div class="history-round-tabs" role="tablist" aria-label="Chọn vòng đấu">
+          ${visibleRounds.map((round, index) => `
+            <button class="history-round-tab${index === selectedScheduleRoundIndex ? " active" : ""}" data-schedule-round="${index}" type="button" role="tab" aria-selected="${index === selectedScheduleRoundIndex}">${escapeHtml(round.title || `Vòng ${index + 1}`)}</button>
+          `).join("")}
+        </div>
+      ` : ""}
+    </div>
+    <div class="history-match-list detail-match-list">
+      ${matches.length
+        ? matches.map((match) => `
+            <article class="history-match-card${match.status === "done" ? " is-complete" : ""}">
+              <div class="history-match-status status-${escapeHtml(match.status || "pending")}">
+                <strong>${String(match.matchIndex + 1).padStart(2, "0")}</strong>
+                <span>${matchStatusLabel(match.status)}</span>
+              </div>
+              <div class="history-match-content">
+                <div class="history-match-player side-a${match.winner === match.playerA ? " is-winner" : ""}">
+                  ${playerRanks.get(match.playerA) ? `<span class="history-player-rank">${escapeHtml(playerRanks.get(match.playerA))}</span>` : ""}
+                  <strong>${escapeHtml(match.playerA || "TBD")}</strong>
+                </div>
+                <div class="history-match-result">
+                  <small>Bàn ${String(match.table || match.matchIndex + 1).padStart(2, "0")}</small>
+                  <div><b class="${match.winner === match.playerA ? "is-winner" : ""}">${escapeHtml(match.scoreA || "-")}</b><i>:</i><b class="${match.winner === match.playerB ? "is-winner" : ""}">${escapeHtml(match.scoreB || "-")}</b></div>
+                  <small>${escapeHtml(match.time || match.roundTitle)}</small>
+                </div>
+                <div class="history-match-player side-b${match.winner === match.playerB ? " is-winner" : ""}">
+                  <strong>${escapeHtml(match.playerB || "TBD")}</strong>
+                  ${playerRanks.get(match.playerB) ? `<span class="history-player-rank">${escapeHtml(playerRanks.get(match.playerB))}</span>` : ""}
+                </div>
+              </div>
+            </article>
+          `).join("")
+        : `<div class="empty-state">Chưa có trận đấu trong nhánh hoặc vòng này.</div>`}
+    </div>
+  `;
+
+  container.querySelectorAll("[data-schedule-phase]").forEach((button) => {
+    button.addEventListener("click", () => {
+      selectedSchedulePhase = button.dataset.schedulePhase;
+      selectedScheduleRoundIndex = 0;
+      renderSchedule();
+    });
+  });
+  container.querySelectorAll("[data-schedule-round]").forEach((button) => {
+    button.addEventListener("click", () => {
+      selectedScheduleRoundIndex = Number(button.dataset.scheduleRound) || 0;
+      renderSchedule();
+    });
+  });
 }
 
 function renderRanking() {
@@ -4546,6 +4794,390 @@ function renderRanking() {
         )
         .join("")
     : `<tr><td colspan="7">Chưa có dữ liệu xếp hạng.</td></tr>`;
+}
+
+function renderAdminLoyalty() {
+  if (!isAdmin) return;
+  const membersBody = document.querySelector("#adminLoyaltyMembersBody");
+  const historyBody = document.querySelector("#adminLoyaltyHistoryBody");
+  if (!membersBody || !historyBody) return;
+
+  const members = loadLoyaltyMembers();
+  membersBody.innerHTML = members.length
+    ? members.map((member, index) => `
+        <tr>
+          <td>${index + 1}</td>
+          <td>${escapeHtml(member.name || "-")}</td>
+          <td>${escapeHtml(member.phone || "-")}</td>
+          <td>${(Number(member.points) || 0).toLocaleString("vi-VN")}</td>
+        </tr>
+      `).join("")
+    : `<tr><td colspan="4">Chưa có thành viên.</td></tr>`;
+
+  const receipts = [...loadLoyaltyReceipts()].reverse();
+  historyBody.innerHTML = receipts.length
+    ? receipts.map((receipt, index) => {
+        const usedAt = new Date(receipt.usedAt);
+        const timestamp = Number.isNaN(usedAt.getTime()) ? "-" : usedAt.toLocaleString("vi-VN");
+        const points = Number(receipt.bidaPoolAmount) || 0;
+        return `
+          <tr>
+            <td>${index + 1}</td>
+            <td>${escapeHtml(receipt.invoiceNumber || "-")}</td>
+            <td>${points.toLocaleString("vi-VN")} ₫</td>
+            <td>${points.toLocaleString("vi-VN")}</td>
+            <td>${escapeHtml(receipt.memberName || "-")}</td>
+            <td>${escapeHtml(timestamp)}</td>
+          </tr>
+        `;
+      }).join("")
+    : `<tr><td colspan="6">Chưa có lịch sử tích điểm.</td></tr>`;
+}
+
+function loadLoyaltyMembers() {
+  try {
+    const members = JSON.parse(localStorage.getItem(LOYALTY_STORAGE_KEY) || "[]");
+    return Array.isArray(members) ? members : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveLoyaltyMembers(members) {
+  localStorage.setItem(LOYALTY_STORAGE_KEY, JSON.stringify(members));
+}
+
+function loadLoyaltyReceipts() {
+  try {
+    const receipts = JSON.parse(localStorage.getItem(LOYALTY_RECEIPTS_STORAGE_KEY) || "[]");
+    return Array.isArray(receipts) ? receipts : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveLoyaltyReceipts(receipts) {
+  localStorage.setItem(LOYALTY_RECEIPTS_STORAGE_KEY, JSON.stringify(receipts));
+}
+
+function normalizeLoyaltyPhone(value) {
+  return String(value || "").replace(/\D/g, "");
+}
+
+function bindLoyaltyForms() {
+  const lookupForm = document.querySelector("#loyaltyLookupForm");
+  const lookupPhone = document.querySelector("#loyaltyLookupPhone");
+  const registrationForm = document.querySelector("#loyaltyRegistrationForm");
+  const memberCard = document.querySelector("#loyaltyMemberCard");
+  const receiptForm = document.querySelector("#loyaltyReceiptForm");
+  const receiptInput = document.querySelector("#loyaltyReceipt");
+  const receiptFileName = document.querySelector("#loyaltyReceiptFileName");
+  const receiptPreview = document.querySelector("#loyaltyReceiptPreview");
+  const invoiceResult = document.querySelector("#loyaltyInvoiceResult");
+  const confirmPointsButton = document.querySelector("#confirmLoyaltyPoints");
+  let scanningReceipt = false;
+  if (!lookupForm || !lookupPhone || !registrationForm || !memberCard || !receiptForm || !receiptInput || !receiptPreview) return;
+
+  const hideMember = () => {
+    memberCard.hidden = true;
+    receiptInput.value = "";
+    receiptFileName.textContent = "Chưa chọn ảnh";
+    receiptPreview.hidden = true;
+    receiptPreview.querySelector("img").removeAttribute("src");
+    document.querySelector("#loyaltyReceiptNotice").hidden = true;
+    invoiceResult.hidden = true;
+    confirmPointsButton.disabled = true;
+    confirmPointsButton.hidden = true;
+  };
+
+  const showMember = (member) => {
+    registrationForm.hidden = true;
+    memberCard.hidden = false;
+    document.querySelector("#loyaltyMemberName").textContent = member.name;
+    document.querySelector("#loyaltyMemberPhone").textContent = member.phone;
+    document.querySelector("#loyaltyMemberPoints").textContent = (Number(member.points) || 0).toLocaleString("vi-VN");
+    renderLoyaltyReceipts(member.phone);
+  };
+
+  const renderLoyaltyReceipts = (phone) => {
+    const body = document.querySelector("#loyaltyUsedReceiptsBody");
+    const normalizedPhone = normalizeLoyaltyPhone(phone);
+    const receipts = loadLoyaltyReceipts().filter(
+      (receipt) => normalizeLoyaltyPhone(receipt.memberPhone) === normalizedPhone,
+    );
+    body.innerHTML = receipts.length
+      ? [...receipts].reverse().map((receipt) => `
+          <tr>
+            <td>${escapeHtml(receipt.invoiceNumber)}</td>
+            <td>${Number(receipt.bidaPoolAmount || 0).toLocaleString("vi-VN")} ₫ (${Number(receipt.bidaPoolAmount || 0).toLocaleString("vi-VN")} điểm)</td>
+            <td>${escapeHtml(receipt.memberName || "-")}</td>
+          </tr>
+        `).join("")
+      : `<tr><td colspan="3">Chưa có biên lai nào được dùng.</td></tr>`;
+  };
+
+  lookupForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const phone = normalizeLoyaltyPhone(lookupPhone.value);
+    const notice = document.querySelector("#loyaltyNotice");
+    if (phone.length < 9 || phone.length > 11) {
+      notice.textContent = "Vui lòng nhập số điện thoại hợp lệ.";
+      notice.hidden = false;
+      registrationForm.hidden = true;
+      hideMember();
+      return;
+    }
+
+    lookupPhone.value = phone;
+    const member = loadLoyaltyMembers().find((entry) => normalizeLoyaltyPhone(entry.phone) === phone);
+    notice.hidden = true;
+    if (member) {
+      showMember(member);
+      return;
+    }
+
+    hideMember();
+    registrationForm.hidden = false;
+    document.querySelector("#loyaltyNewPhone").value = phone;
+    document.querySelector("#loyaltyNewName").value = "";
+    notice.textContent = "Chưa có số điện thoại này. Nhập thông tin để tạo thành viên mới.";
+    notice.hidden = false;
+  });
+
+  lookupPhone.addEventListener("input", () => {
+    registrationForm.hidden = true;
+    hideMember();
+    document.querySelector("#loyaltyNotice").hidden = true;
+  });
+
+  registrationForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const phone = normalizeLoyaltyPhone(document.querySelector("#loyaltyNewPhone").value);
+    const name = document.querySelector("#loyaltyNewName").value.trim();
+    const members = loadLoyaltyMembers();
+    const existing = members.find((entry) => normalizeLoyaltyPhone(entry.phone) === phone);
+    if (existing) {
+      lookupPhone.value = phone;
+      showMember(existing);
+      return;
+    }
+    if (!name || phone.length < 9 || phone.length > 11) return;
+
+    const member = { phone, name, points: 0, createdAt: new Date().toISOString() };
+    members.push(member);
+    saveLoyaltyMembers(members);
+    registrationForm.hidden = true;
+    memberCard.hidden = true;
+    lookupPhone.value = "";
+    lookupPhone.focus();
+    const notice = document.querySelector("#loyaltyNotice");
+    notice.textContent = "Đã thêm thành viên. Nhập lại số điện thoại để kiểm tra thông tin.";
+    notice.hidden = false;
+  });
+
+  receiptInput.addEventListener("change", () => {
+    const file = receiptInput.files?.[0];
+    const notice = document.querySelector("#loyaltyReceiptNotice");
+    if (!file) {
+      receiptFileName.textContent = "Chưa chọn ảnh";
+      receiptPreview.hidden = true;
+      return;
+    }
+    invoiceResult.hidden = true;
+    confirmPointsButton.disabled = true;
+    confirmPointsButton.hidden = true;
+    window.loyaltyScannedInvoice = null;
+    if (!file.type.startsWith("image/")) {
+      receiptInput.value = "";
+      receiptFileName.textContent = "Chưa chọn ảnh";
+      notice.textContent = "Vui lòng chọn ảnh biên lai.";
+      notice.hidden = false;
+      receiptPreview.hidden = true;
+      return;
+    }
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      receiptInput.value = "";
+      receiptFileName.textContent = "Chưa chọn ảnh";
+      notice.textContent = "Chỉ hỗ trợ ảnh JPG, PNG hoặc WEBP.";
+      notice.hidden = false;
+      receiptPreview.hidden = true;
+      return;
+    }
+    receiptFileName.textContent = file.name;
+    receiptPreview.querySelector("img").src = URL.createObjectURL(file);
+    receiptPreview.hidden = false;
+    notice.hidden = true;
+    scanReceipt();
+  });
+
+  async function scanReceipt() {
+    if (scanningReceipt) return;
+    const notice = document.querySelector("#loyaltyReceiptNotice");
+    const file = receiptInput.files?.[0];
+    if (!file) {
+      notice.textContent = "Vui lòng tải ảnh biên lai lên trước.";
+      notice.hidden = false;
+      return;
+    }
+    if (file.size > 6 * 1024 * 1024) {
+      notice.textContent = "Ảnh biên lai tối đa 6 MB.";
+      notice.hidden = false;
+      return;
+    }
+
+    scanningReceipt = true;
+    receiptInput.disabled = true;
+    notice.textContent = "Đang gửi ảnh để đọc thông tin.";
+    notice.hidden = false;
+    invoiceResult.hidden = true;
+
+    try {
+      const dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ""));
+        reader.onerror = () => reject(new Error("Không đọc được tệp ảnh."));
+        reader.readAsDataURL(file);
+      });
+      const response = await fetch("/api/scan-invoice", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mimeType: file.type, imageData: dataUrl }),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.ok) throw new Error(result.message || "Không quét được biên lai.");
+      const invoice = result.invoice || {};
+      window.loyaltyScannedInvoice = invoice;
+      const validation = validateLoyaltyInvoice(invoice);
+      renderInvoiceResult(invoice, validation);
+      invoiceResult.hidden = false;
+      notice.textContent = "Đã đọc xong. Vui lòng đối chiếu thông tin với ảnh biên lai.";
+    } catch (error) {
+      notice.textContent = error.message || "Không quét được biên lai.";
+    } finally {
+      notice.hidden = false;
+      scanningReceipt = false;
+      receiptInput.disabled = false;
+    }
+  }
+
+  function validateLoyaltyInvoice(invoice) {
+    const problems = [];
+    const missing = [];
+    const storeName = String(invoice.store_name || "").trim();
+    if (!storeName) missing.push("đơn vị quán");
+    else if (normalizeLoyaltyText(storeName) !== "mabuubilliardsclub") {
+      problems.push("Sai đơn vị quán. Chỉ nhận biên lai MaBuu Billiards Club.");
+    }
+
+    const invoiceNumber = String(invoice.invoice_number || "").trim();
+    if (!String(invoice.date || "").trim()) missing.push("ngày");
+    if (!invoiceNumber) missing.push("số phiếu");
+    else if (!/^HD\d{6}$/i.test(invoiceNumber)) missing.push("mã phiếu định dạng HD + 6 số");
+    else if (loadLoyaltyReceipts().some((receipt) => normalizeLoyaltyText(receipt.invoiceNumber) === normalizeLoyaltyText(invoiceNumber))) {
+      problems.push("Phiếu đã được sử dụng.");
+    }
+    const totalAmount = parseLoyaltyAmount(invoice.total_amount);
+    if (totalAmount === null || totalAmount <= 0) missing.push("tổng tiền");
+
+    const bidaItem = (Array.isArray(invoice.items) ? invoice.items : []).find(
+      (item) => normalizeLoyaltyText(item.name) === "bidapool",
+    );
+    const points = parseLoyaltyAmount(bidaItem?.total_price);
+    if (!bidaItem) missing.push("mục BIDA POOL");
+    else {
+      if (bidaItem.quantity === null || bidaItem.quantity === undefined || !String(bidaItem.quantity).trim()) missing.push("số lượng BIDA POOL");
+      const unitPrice = parseLoyaltyAmount(bidaItem.unit_price);
+      if (unitPrice === null || unitPrice <= 0) missing.push("đơn giá BIDA POOL");
+      if (points === null || points <= 0) missing.push("thành tiền BIDA POOL");
+    }
+    if (missing.length) {
+      problems.push(`Ảnh chưa rõ hoặc thiếu thông tin: ${[...new Set(missing)].join(", ")}. Vui lòng chụp lại rõ toàn bộ phiếu, không bị mờ hoặc cắt.`);
+    }
+    return { valid: problems.length === 0, problems, invoiceNumber, points };
+  }
+
+  function normalizeLoyaltyText(value) {
+    return String(value || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, "");
+  }
+
+  function parseLoyaltyAmount(value) {
+    if (typeof value === "number") return Number.isFinite(value) ? Math.round(value) : null;
+    const digits = String(value ?? "").replace(/[^0-9-]/g, "");
+    if (!digits || digits === "-") return null;
+    const amount = Number(digits);
+    return Number.isSafeInteger(amount) ? amount : null;
+  }
+
+  function renderInvoiceResult(invoice, validation) {
+    const fields = document.querySelector("#loyaltyInvoiceFields");
+    const items = document.querySelector("#loyaltyInvoiceItems");
+    const validationNotice = document.querySelector("#loyaltyInvoiceValidation");
+    const detailRows = [
+      ["Đơn vị", invoice.store_name],
+      ["Ngày", invoice.date],
+      ["Mã giao dịch / hóa đơn", invoice.invoice_number],
+      ["Tổng tiền", invoice.total_amount],
+    ];
+    fields.innerHTML = detailRows.map(([label, value]) => `
+      <div><small>${label}</small><strong>${escapeHtml(value === null || value === undefined || value === "" ? "Chưa đọc được" : String(value))}</strong></div>
+    `).join("");
+
+    const rows = Array.isArray(invoice.items) ? invoice.items : [];
+    items.innerHTML = rows.length
+      ? `<h4>Chi tiết khoản mục</h4>${rows.map((item) => `
+          <div class="loyalty-invoice-item">
+            <strong>${escapeHtml(String(item.name || "Khoản mục"))}</strong>
+            <span>SL: ${escapeHtml(String(item.quantity ?? "-"))}</span>
+            <span>Đơn giá: ${escapeHtml(String(item.unit_price ?? "-"))}</span>
+            <span>Thành tiền: ${escapeHtml(String(item.total_price ?? "-"))}</span>
+          </div>
+        `).join("")}`
+      : "";
+
+    confirmPointsButton.disabled = !validation.valid;
+    confirmPointsButton.hidden = !validation.valid;
+    validationNotice.textContent = validation.valid
+      ? `Biên lai hợp lệ. Sẽ cộng ${validation.points.toLocaleString("vi-VN")} điểm từ mục BIDA POOL.`
+      : validation.problems.join(" ");
+    validationNotice.hidden = false;
+  }
+
+  confirmPointsButton.addEventListener("click", () => {
+    if (confirmPointsButton.disabled) return;
+    const phone = normalizeLoyaltyPhone(document.querySelector("#loyaltyMemberPhone").textContent);
+    const members = loadLoyaltyMembers();
+    const member = members.find((entry) => normalizeLoyaltyPhone(entry.phone) === phone);
+    const invoice = window.loyaltyScannedInvoice;
+    if (!member || !invoice) return;
+
+    const validation = validateLoyaltyInvoice(invoice);
+    const validationNotice = document.querySelector("#loyaltyInvoiceValidation");
+    if (!validation.valid) {
+      validationNotice.textContent = validation.problems.join(" ");
+      confirmPointsButton.disabled = true;
+      return;
+    }
+
+    member.points = (Number(member.points) || 0) + validation.points;
+    saveLoyaltyMembers(members);
+    const receipts = loadLoyaltyReceipts();
+    receipts.push({
+      invoiceNumber: validation.invoiceNumber,
+      bidaPoolAmount: validation.points,
+      memberPhone: member.phone,
+      memberName: member.name,
+      usedAt: new Date().toISOString(),
+    });
+    saveLoyaltyReceipts(receipts);
+    document.querySelector("#loyaltyMemberPoints").textContent = member.points.toLocaleString("vi-VN");
+    validationNotice.textContent = `Đã cộng ${validation.points.toLocaleString("vi-VN")} điểm cho ${member.name}.`;
+    confirmPointsButton.disabled = true;
+    renderLoyaltyReceipts(member.phone);
+  });
 }
 
 function renderTournamentRanking() {
@@ -4817,6 +5449,8 @@ function renderAll() {
   renderBracket(state.rounds.some((round) => bracketPhaseForRound(round)) ? selectedDetailBracketPhase : null);
   renderSchedule();
   renderRanking();
+  renderAdminLoyalty();
+  renderPoints();
   renderTournamentRanking();
   renderContact();
   renderHistory();
@@ -5796,6 +6430,8 @@ function bindCameraSelector() {
 }
 
 bindTabs();
+bindAdminLoyaltyViews();
+bindLoyaltyForms();
 bindBracketFit();
 bindMiniGame();
 bindTournamentManager();
@@ -5804,6 +6440,9 @@ bindCameraSelector();
 document.addEventListener("focusin", markLocalEdit);
 document.addEventListener("input", markLocalEdit);
 document.addEventListener("change", markLocalEdit);
+window.addEventListener("storage", (event) => {
+  if ([LOYALTY_STORAGE_KEY, LOYALTY_RECEIPTS_STORAGE_KEY].includes(event.key)) renderAdminLoyalty();
+});
 document.querySelector("#homePlayerSearch")?.addEventListener("input", (event) => {
   renderHomePlayerList(event.target.value);
 });

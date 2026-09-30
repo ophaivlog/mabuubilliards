@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>Ma Buu Tournament Viewer</title>
-    <link rel="stylesheet" href="styles.css?v=20260926-5" />
+    <link rel="stylesheet" href="styles.css?v=20260930-17" />
   </head>
   <body data-mode="viewer">
     <header class="site-header">
@@ -16,6 +16,7 @@
       <nav class="main-nav" role="tablist" aria-label="Điều hướng chính">
         <button class="tab active" type="button" data-tab="home"><span>Giải đấu</span></button>
         <button class="tab" type="button" data-tab="ranking"><span>Xếp hạng</span></button>
+        <button class="tab" type="button" data-tab="points"><span>Tích điểm</span></button>
         <button class="tab" type="button" data-tab="minigame"><span>Mini game</span></button>
         <button class="tab" type="button" data-tab="contact"><span>Liên hệ</span></button>
       </nav>
@@ -41,10 +42,18 @@
     </section>
 
     <nav class="tournament-quick-nav page-home-only" aria-label="Thông tin giải đấu">
-      <button class="active" data-home-tab="home" type="button"><i>01</i> Thông tin chung</button>
-      <button data-home-tab="schedule" type="button"><i>02</i> Lịch thi đấu</button>
-      <button data-home-tab="tournamentRanking" type="button"><i>03</i> Top thi đấu</button>
-      <button data-home-tab="bracket" type="button"><i>04</i> Sơ đồ đấu</button>
+      <button class="active" data-home-tab="home" type="button">
+        <svg class="quick-nav-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/></svg><span>Thông tin chung</span>
+      </button>
+      <button data-home-tab="schedule" type="button">
+        <svg class="quick-nav-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18m-13 4h3m-3 4h7"/></svg><span>Lịch thi đấu</span>
+      </button>
+      <button data-home-tab="tournamentRanking" type="button">
+        <svg class="quick-nav-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4h8v4a4 4 0 0 1-8 0V4Zm4 8v5m-4 3h8m-8-3h8"/><path d="M8 6H4v2a4 4 0 0 0 4 4m8-6h4v2a4 4 0 0 1-4 4"/></svg><span>Top thi đấu</span>
+      </button>
+      <button data-home-tab="bracket" type="button">
+        <svg class="quick-nav-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="6" height="5" rx="1"/><rect x="15" y="3" width="6" height="5" rx="1"/><rect x="9" y="16" width="6" height="5" rx="1"/><path d="M6 8v4h12V8m-6 4v4"/></svg><span>Sơ đồ đấu</span>
+      </button>
     </nav>
 
     <main>
@@ -232,22 +241,7 @@
             </div>
             <button class="secondary-action" data-admin-only id="syncSchedule" type="button">Làm mới</button>
           </div>
-          <div class="table-wrap">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Vòng</th>
-                  <th>Trận</th>
-                  <th>Thời gian</th>
-                  <th>Bàn</th>
-                  <th>Cơ thủ</th>
-                  <th>Điểm</th>
-                  <th>Trạng thái</th>
-                </tr>
-              </thead>
-              <tbody id="scheduleBody"></tbody>
-            </table>
-          </div>
+          <div id="scheduleHistory" aria-live="polite"></div>
         </div>
       </section>
 
@@ -274,6 +268,73 @@
               </thead>
               <tbody id="rankingBody"></tbody>
             </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" id="points" hidden>
+        <div class="data-section wide-section">
+          <div class="section-heading">
+            <div>
+              <p>THÀNH VIÊN</p>
+              <h2>Tích điểm</h2>
+            </div>
+          </div>
+          <div class="loyalty-panel">
+            <form id="loyaltyLookupForm" class="loyalty-form">
+              <label for="loyaltyLookupPhone">Nhập số điện thoại</label>
+              <div class="loyalty-form-row">
+                <input id="loyaltyLookupPhone" type="tel" inputmode="numeric" autocomplete="tel" placeholder="Số điện thoại" required />
+                <button class="primary-action" type="submit">Kiểm tra</button>
+              </div>
+            </form>
+            <div id="loyaltyNotice" class="loyalty-notice" role="status" hidden></div>
+
+            <form id="loyaltyRegistrationForm" class="loyalty-form" hidden>
+              <h3>Thêm thành viên mới</h3>
+              <label for="loyaltyNewPhone">Số điện thoại</label>
+              <input id="loyaltyNewPhone" type="tel" inputmode="numeric" autocomplete="tel" required />
+              <label for="loyaltyNewName">Họ và tên</label>
+              <input id="loyaltyNewName" type="text" autocomplete="name" required />
+              <button class="primary-action" type="submit">Thêm vào danh sách</button>
+            </form>
+
+            <section id="loyaltyMemberCard" class="loyalty-member" hidden aria-live="polite">
+              <div class="loyalty-member-details">
+                <div><small>Họ và tên</small><strong id="loyaltyMemberName"></strong></div>
+                <div><small>Số điện thoại</small><strong id="loyaltyMemberPhone"></strong></div>
+                <div><small>Điểm tích lũy</small><strong id="loyaltyMemberPoints">0</strong></div>
+              </div>
+              <form id="loyaltyReceiptForm" class="loyalty-form">
+                <label for="loyaltyReceipt">Tải biên lai chuyển khoản</label>
+                <input id="loyaltyReceipt" class="loyalty-file-input" type="file" accept="image/jpeg,image/png,image/webp" />
+                <label class="loyalty-file-button" for="loyaltyReceipt">
+                  <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3m0 0L7 8m5-5 5 5"/><path d="M5 14v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/></svg>
+                  <span>Tải biên lai</span>
+                </label>
+                <span id="loyaltyReceiptFileName" class="loyalty-file-name">Chưa chọn ảnh</span>
+              </form>
+              <div id="loyaltyReceiptPreview" class="loyalty-receipt-preview" hidden>
+                <img alt="Ảnh biên lai chuyển khoản đã chọn" />
+              </div>
+              <div id="loyaltyReceiptNotice" class="loyalty-notice" role="status" hidden></div>
+              <section id="loyaltyInvoiceResult" class="loyalty-invoice-result" hidden aria-live="polite">
+                <h3>Thông tin đọc được từ biên lai</h3>
+                <div id="loyaltyInvoiceFields" class="loyalty-invoice-fields"></div>
+                <div id="loyaltyInvoiceItems" class="loyalty-invoice-items"></div>
+                <div id="loyaltyInvoiceValidation" class="loyalty-notice" role="status" hidden></div>
+                <button id="confirmLoyaltyPoints" class="primary-action" type="button" disabled hidden>Tích điểm</button>
+              </section>
+              <section class="loyalty-used-receipts">
+                <h3>Danh sách biên lai đã dùng</h3>
+                <div class="table-wrap">
+                  <table class="data-table">
+                    <thead><tr><th>Số phiếu</th><th>BIDA POOL</th><th>Thành viên</th></tr></thead>
+                    <tbody id="loyaltyUsedReceiptsBody"></tbody>
+                  </table>
+                </div>
+              </section>
+            </section>
           </div>
         </div>
       </section>
@@ -308,7 +369,6 @@
       <section class="panel bracket-panel" id="bracket" hidden>
         <div class="bracket-round-tabs" id="bracketRoundTabs" aria-label="Chọn vòng đấu"></div>
         <div class="bracket-scroll" aria-label="Sơ đồ thi đấu có thể cuộn ngang" title="Lăn con lăn chuột để phóng to hoặc thu nhỏ sơ đồ">
-          <button class="bracket-fit-toggle" data-bracket-fit type="button">Thu vừa màn hình</button>
           <div class="bracket" id="bracketCanvas"></div>
         </div>
       </section>
@@ -508,6 +568,6 @@
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="supabase-config.js?v=20260524-2"></script>
-    <script src="script.js?v=20260926-12"></script>
+    <script src="script.js?v=20260930-16"></script>
   </body>
 </html>

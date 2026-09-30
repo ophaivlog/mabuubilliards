@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>Ma Buu Tournament Admin</title>
-    <link rel="stylesheet" href="styles.css?v=20260926-5" />
+    <link rel="stylesheet" href="styles.css?v=20260930-17" />
   </head>
   <body data-mode="admin" data-auth="locked">
     <section class="admin-login" id="adminLogin">
@@ -35,6 +35,7 @@
         <a href="index.html">Trang người xem</a>
         <button class="tab active" type="button" data-tab="home"><span>Quản lý giải đấu</span></button>
         <button class="tab" type="button" data-tab="ranking"><span>Xếp hạng</span></button>
+        <button class="tab" type="button" data-tab="loyalty"><span>Tích điểm</span></button>
         <div class="nav-dropdown" data-camera-menu>
           <button class="tab" type="button" data-tab="camera" data-camera-view="lan"><span>Camera</span></button>
           <div class="nav-submenu">
@@ -244,6 +245,45 @@
         </div>
       </section>
 
+      <section class="panel" id="loyalty" hidden>
+        <div class="data-section wide-section">
+          <div class="section-heading">
+            <div>
+              <p>CHƯƠNG TRÌNH THÀNH VIÊN</p>
+              <h2>Tích điểm</h2>
+            </div>
+          </div>
+          <div class="loyalty-admin-switch" role="tablist" aria-label="Chọn danh sách tích điểm">
+            <button type="button" role="tab" aria-selected="true" aria-controls="adminLoyaltyMembersView" data-admin-loyalty-view="adminLoyaltyMembersView">Thành viên</button>
+            <button type="button" role="tab" aria-selected="false" aria-controls="adminLoyaltyHistoryView" data-admin-loyalty-view="adminLoyaltyHistoryView">Lịch sử tích điểm</button>
+          </div>
+
+          <section id="adminLoyaltyMembersView" class="loyalty-admin-view" role="tabpanel">
+            <div class="section-heading">
+              <div><h3>Danh sách thành viên</h3></div>
+            </div>
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead><tr><th>STT</th><th>Họ tên</th><th>Số điện thoại</th><th>Điểm tích lũy</th></tr></thead>
+                <tbody id="adminLoyaltyMembersBody"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section id="adminLoyaltyHistoryView" class="loyalty-admin-view" role="tabpanel" hidden>
+            <div class="section-heading">
+              <div><h3>Lịch sử tích điểm</h3></div>
+            </div>
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead><tr><th>STT</th><th>Số phiếu</th><th>Số BIDA POOL</th><th>Tổng điểm</th><th>Họ tên</th><th>Thời gian tích điểm</th></tr></thead>
+                <tbody id="adminLoyaltyHistoryBody"></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </section>
+
       <section class="panel bracket-panel" id="bracket" hidden>
         <div class="tournament-title">
           <div class="bracket-tools">
@@ -253,7 +293,6 @@
         </div>
         <div class="bracket-round-tabs" id="bracketRoundTabs" aria-label="Chọn vòng đấu"></div>
         <div class="bracket-scroll" aria-label="Sơ đồ thi đấu có thể cuộn ngang" title="Lăn con lăn chuột để phóng to hoặc thu nhỏ sơ đồ">
-          <button class="bracket-fit-toggle" data-bracket-fit type="button">Thu vừa màn hình</button>
           <div class="bracket" id="bracketCanvas"></div>
         </div>
       </section>
@@ -595,6 +634,6 @@
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="supabase-config.js?v=20260524-2"></script>
-    <script src="script.js?v=20260926-12"></script>
+    <script src="script.js?v=20260930-12"></script>
   </body>
 </html>
