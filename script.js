@@ -1,3 +1,35 @@
+function initThemeToggle() {
+  const storageKey = "mabuu-color-theme";
+  const applyTheme = (theme) => {
+    document.documentElement.dataset.theme = theme;
+    document.querySelectorAll("[data-theme-toggle]").forEach((button) => {
+      const nextTheme = theme === "dark" ? "sáng" : "tối";
+      button.setAttribute("aria-label", `Chuyển sang giao diện ${nextTheme}`);
+      button.title = `Chuyển sang giao diện ${nextTheme}`;
+      button.setAttribute("aria-pressed", String(theme === "light"));
+    });
+  };
+
+  let savedTheme = "light";
+  try {
+    const storedTheme = localStorage.getItem(storageKey);
+    savedTheme = storedTheme === "dark" ? "dark" : "light";
+  } catch {}
+  applyTheme(savedTheme);
+
+  document.querySelectorAll("[data-theme-toggle]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const nextTheme = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+      applyTheme(nextTheme);
+      try {
+        localStorage.setItem(storageKey, nextTheme);
+      } catch {}
+    });
+  });
+}
+
+initThemeToggle();
+
 const cardWidth = 320;
 const cardHeight = 128;
 const rowHeight = 148;
@@ -5307,6 +5339,7 @@ function bindLoyaltyForms() {
     validationNotice.textContent = validation.valid
       ? `Biên lai hợp lệ. Sẽ cộng ${validation.points.toLocaleString("vi-VN")} điểm (1.000đ = 1 điểm, làm tròn gần nhất) từ mục BIDA POOL.`
       : validation.problems.join(" ");
+    validationNotice.dataset.type = validation.valid ? "muted" : "error";
     validationNotice.hidden = false;
   }
 
@@ -5321,6 +5354,7 @@ function bindLoyaltyForms() {
     const validationNotice = document.querySelector("#loyaltyInvoiceValidation");
     if (!validation.valid) {
       validationNotice.textContent = validation.problems.join(" ");
+      validationNotice.dataset.type = "error";
       confirmPointsButton.disabled = true;
       return;
     }
@@ -5338,9 +5372,11 @@ function bindLoyaltyForms() {
       loyaltyReceipts = [receipt, ...loyaltyReceipts.filter((item) => item.invoiceNumber !== receipt.invoiceNumber)];
       showMember(updatedMember);
       validationNotice.textContent = `Đã cộng ${validation.points.toLocaleString("vi-VN")} điểm cho ${updatedMember.name} trên cloud.`;
+      validationNotice.dataset.type = "ok";
       renderLoyaltyReceipts(updatedMember.phone);
     } catch (error) {
       validationNotice.textContent = error.message;
+      validationNotice.dataset.type = "error";
       confirmPointsButton.disabled = false;
     }
   });
