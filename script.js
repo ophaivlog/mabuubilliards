@@ -268,6 +268,16 @@ function setLoginStatus(message, type = "muted") {
   status.dataset.type = type;
 }
 
+function blockOfflineMutations(event) {
+  if (navigator.onLine) return;
+  const control = event.target.closest?.("button, input, textarea, select, form, [contenteditable='true']");
+  if (!control) return;
+  if (event.type === "click" && control.matches("[data-tab], [data-history-phase], [data-history-round]")) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  setCloudStatus("Web chỉ hoạt động online. Kết nối mạng rồi thử lại.", "error");
+}
+
 function isTypingInEditableField() {
   const active = document.activeElement;
   const hasRecentLocalEdit = Date.now() - lastLocalEditAt < LOCAL_EDIT_SYNC_GUARD_MS;
@@ -6548,8 +6558,27 @@ bindCameraSelector();
 document.addEventListener("focusin", markLocalEdit);
 document.addEventListener("input", markLocalEdit);
 document.addEventListener("change", markLocalEdit);
+document.addEventListener("click", blockOfflineMutations, true);
+document.addEventListener("input", blockOfflineMutations, true);
+document.addEventListener("change", blockOfflineMutations, true);
+document.addEventListener("submit", blockOfflineMutations, true);
 document.querySelector("#homePlayerSearch")?.addEventListener("input", (event) => {
   renderHomePlayerList(event.target.value);
+});
+
+window.addEventListener("offline", () => {
+  cloudReady = false;
+  miniGameCloudReady = false;
+  const spinButton = document.querySelector("#spinPrizeWheel");
+  if (spinButton) spinButton.disabled = true;
+  setCloudStatus("Không có kết nối mạng. Các thao tác bị tạm dừng; dữ liệu chỉ được lấy từ cloud.", "error");
+});
+window.addEventListener("online", () => {
+  loadCloudState();
+  loadMiniGameCloud();
+  if (isAdmin && document.body.dataset.auth === "unlocked") {
+    loadAdminLoyaltyCloud().catch((error) => setAdminNotice(`Không tải được tích điểm từ cloud: ${error.message}`, "error"));
+  }
 });
 
 loadMiniGameCloud();
