@@ -2874,6 +2874,11 @@ function bindTabs() {
     activate("tournaments");
   });
   document.querySelector("[data-open-create-tournament]")?.addEventListener("click", openCreateTournamentModal);
+
+  const initialTab = new URLSearchParams(window.location.search).get("tab");
+  if (initialTab && [...topTabs].some((button) => button.dataset.tab === initialTab)) {
+    activate(initialTab);
+  }
 }
 
 function keepActivePanelVisible() {
