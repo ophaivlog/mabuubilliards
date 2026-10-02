@@ -93,7 +93,12 @@ module.exports = async function handler(req, res) {
         if (phone.length < 9 || phone.length > 11) return json(res, 400, { ok: false, message: "Số điện thoại không hợp lệ." });
         const members = await request(`loyalty_members?phone=eq.${encodeURIComponent(phone)}&select=phone,name,points,created_at`);
         const receipts = await request(`loyalty_receipts?member_phone=eq.${encodeURIComponent(phone)}&select=invoice_number,member_phone,member_name,points,used_at&order=used_at.desc`);
-        const rewardClaims = await request(`loyalty_reward_claims?member_phone=eq.${encodeURIComponent(phone)}&select=reward_code,claimed_at&order=claimed_at.desc`);
+        let rewardClaims = [];
+        try {
+          rewardClaims = await request(`loyalty_reward_claims?member_phone=eq.${encodeURIComponent(phone)}&select=reward_code,claimed_at,handed_at&order=claimed_at.desc`);
+        } catch (error) {
+          if (![400, 404].includes(error.statusCode)) throw error;
+        }
         let pointAdjustments = [];
         try {
           pointAdjustments = await request(`loyalty_point_adjustments?member_phone=eq.${encodeURIComponent(phone)}&select=member_phone,points,reason,adjusted_at&order=adjusted_at.desc`);
@@ -108,9 +113,9 @@ module.exports = async function handler(req, res) {
         const receipts = await request("loyalty_receipts?select=invoice_number,member_phone,member_name,points,used_at&order=used_at.desc&limit=10000");
         let rewardClaims = [];
         try {
-          rewardClaims = await request("loyalty_reward_claims?select=member_phone,reward_code,claimed_at&order=claimed_at.desc");
+          rewardClaims = await request("loyalty_reward_claims?select=member_phone,reward_code,claimed_at,handed_at&order=claimed_at.desc");
         } catch (error) {
-          if (error.statusCode !== 404) throw error;
+          if (![400, 404].includes(error.statusCode)) throw error;
         }
         let pointAdjustments = [];
         try {
@@ -174,6 +179,18 @@ module.exports = async function handler(req, res) {
         body: JSON.stringify({ p_member_phone: phone, p_target_points: targetPoints }),
       });
       return json(res, 200, { ok: true, ...result });
+    }
+
+    if (body.action === "admin-confirm-loyalty-reward") {
+      if (!(await requireAdmin(req.headers.authorization))) return json(res, 401, { ok: false, message: "Cần đăng nhập admin để xác nhận trao quà." });
+      const phone = normalizePhone(body.phone);
+      const rewardCode = String(body.rewardCode || "");
+      if (phone.length < 9 || phone.length > 11) return json(res, 400, { ok: false, message: "Số điện thoại không hợp lệ." });
+      const claim = await request("rpc/admin_confirm_loyalty_reward", {
+        method: "POST",
+        body: JSON.stringify({ p_member_phone: phone, p_reward_code: rewardCode }),
+      });
+      return json(res, 200, { ok: true, claim });
     }
 
     if (body.action === "record-spin") {

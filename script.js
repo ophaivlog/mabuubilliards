@@ -5044,9 +5044,9 @@ function openAdminLoyaltyMemberCard(phone, trigger) {
 
   const annualPoints = getLoyaltyPointsLast12Months(member.phone);
   const rank = getLoyaltyRank(annualPoints);
-  const claimedCodes = new Set(loyaltyRewardClaims
-    .filter((claim) => normalizeLoyaltyPhone(claim.member_phone || claim.memberPhone) === normalizeLoyaltyPhone(member.phone))
-    .map((claim) => claim.reward_code || claim.rewardCode));
+  const memberClaims = loyaltyRewardClaims.filter(
+    (claim) => normalizeLoyaltyPhone(claim.member_phone || claim.memberPhone) === normalizeLoyaltyPhone(member.phone),
+  );
   const rewards = [
     ["glove_1500", 1500, "🧤", "Bao tay cá nhân"],
     ["chalk_3000", 3000, "V10", "Lơ Taom V10 chính hãng"],
@@ -5055,14 +5055,15 @@ function openAdminLoyaltyMemberCard(phone, trigger) {
     ["cue_15000", 15000, "🎱", "Cơ cá nhân"],
   ];
   const rewardCards = rewards.map(([code, threshold, icon, label]) => {
-    const claimed = claimedCodes.has(code);
+    const claim = memberClaims.find((item) => (item.reward_code || item.rewardCode) === code);
+    const handedAt = claim?.handed_at || claim?.handedAt || "";
     const reached = annualPoints >= threshold;
-    const status = claimed
-      ? '<span class="loyalty-reward-stamp">ĐÃ NHẬN</span>'
+    const status = handedAt
+      ? '<span class="loyalty-reward-stamp">ĐÃ TRAO</span>'
       : reached
-        ? '<span class="admin-reward-eligible">ĐỦ ĐIỂM · CHƯA NHẬN</span><button class="loyalty-reward-claim" type="button" disabled>NHẬN QUÀ</button>'
+        ? `<span class="admin-reward-eligible">${claim ? "HỘI VIÊN ĐÃ YÊU CẦU" : "ĐỦ ĐIỂM · CHƯA NHẬN"}</span><button class="loyalty-reward-claim admin-confirm-reward" type="button" data-admin-confirm-reward="${code}">XÁC NHẬN ĐÃ TRAO</button>`
         : `<span class="loyalty-reward-locked">Còn ${(threshold - annualPoints).toLocaleString("vi-VN")} điểm</span><button class="loyalty-reward-claim is-locked" type="button" disabled>CHƯA ĐỦ ĐIỂM</button>`;
-    return `<article class="admin-reward-card ${claimed ? "is-claimed" : ""}"><span class="admin-reward-icon ${code === "chalk_3000" ? "loyalty-reward-chalk" : ""}" aria-hidden="true">${icon}</span><div class="admin-reward-copy"><strong>${threshold.toLocaleString("vi-VN")} điểm · ${label}</strong>${status}</div></article>`;
+    return `<article class="admin-reward-card ${handedAt ? "is-claimed" : ""}"><span class="admin-reward-icon ${code === "chalk_3000" ? "loyalty-reward-chalk" : ""}" aria-hidden="true">${icon}</span><div class="admin-reward-copy"><strong>${threshold.toLocaleString("vi-VN")} điểm · ${label}</strong>${status}${handedAt ? `<small class="admin-reward-handed-at">Đã trao ${escapeHtml(new Date(handedAt).toLocaleString("vi-VN"))}</small>` : ""}</div></article>`;
   }).join("");
   const receipts = [
     ...loyaltyReceipts
@@ -5111,6 +5112,8 @@ function openAdminLoyaltyMemberCard(phone, trigger) {
   const pointsNotice = document.querySelector("#adminMemberPointsNotice");
   if (pointsTarget) pointsTarget.value = String(annualPoints);
   if (pointsNotice) pointsNotice.hidden = true;
+  const rewardNotice = document.querySelector("#adminRewardFulfillmentNotice");
+  if (rewardNotice) rewardNotice.hidden = true;
   modal._returnFocus = trigger || document.activeElement;
   modal.querySelector("[data-close-admin-member-card]")?.focus();
 }
@@ -5139,6 +5142,40 @@ function bindAdminLoyaltyMemberCard() {
   modal.querySelector("[data-close-admin-member-card]")?.addEventListener("click", close);
   modal.addEventListener("click", (event) => {
     if (event.target === modal) close();
+  });
+  modal.addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-admin-confirm-reward]");
+    if (!button || button.disabled) return;
+    const phone = modal.dataset.memberPhone || "";
+    const rewardCode = button.dataset.adminConfirmReward;
+    const notice = document.querySelector("#adminRewardFulfillmentNotice");
+    button.disabled = true;
+    notice.hidden = true;
+    try {
+      const headers = await adminAuthorizationHeaders();
+      const data = await requestSharedData("/api/shared-data", {
+        method: "POST",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "admin-confirm-loyalty-reward", phone, rewardCode }),
+      });
+      loyaltyRewardClaims = [
+        data.claim,
+        ...loyaltyRewardClaims.filter((claim) =>
+          normalizeLoyaltyPhone(claim.member_phone || claim.memberPhone) !== normalizeLoyaltyPhone(phone)
+          || (claim.reward_code || claim.rewardCode) !== rewardCode),
+      ];
+      renderAdminLoyalty();
+      openAdminLoyaltyMemberCard(phone);
+      const successNotice = document.querySelector("#adminRewardFulfillmentNotice");
+      successNotice.textContent = "Đã xác nhận admin trao quà cho hội viên.";
+      successNotice.dataset.type = "ok";
+      successNotice.hidden = false;
+    } catch (error) {
+      notice.textContent = error.message;
+      notice.dataset.type = "error";
+      notice.hidden = false;
+      button.disabled = false;
+    }
   });
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && !modal.hidden) close();

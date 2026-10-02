@@ -4820,6 +4820,16 @@ html[data-theme="dark"] .loyalty-notice[data-type="error"] {
   cursor: default;
 }
 
+.admin-reward-copy .admin-confirm-reward {
+  cursor: pointer;
+}
+
+.admin-reward-handed-at {
+  color: #b8f2d2;
+  font-size: 10px;
+  line-height: 1.3;
+}
+
 .admin-reward-eligible {
   color: #ffa4d6;
   font-size: 10px;
