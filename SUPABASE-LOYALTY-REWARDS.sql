@@ -6,9 +6,20 @@ create table if not exists public.loyalty_reward_claims (
   unique (member_phone, reward_code)
 );
 
+create table if not exists public.loyalty_point_adjustments (
+  id bigint generated always as identity primary key,
+  member_phone text not null references public.loyalty_members(phone),
+  points integer not null check (points <> 0),
+  reason text not null default 'Admin điều chỉnh tổng điểm trong 12 tháng',
+  adjusted_at timestamptz not null default now()
+);
+
 alter table public.loyalty_reward_claims enable row level security;
+alter table public.loyalty_point_adjustments enable row level security;
 revoke all on public.loyalty_reward_claims from anon, authenticated;
 grant all on public.loyalty_reward_claims to service_role;
+revoke all on public.loyalty_point_adjustments from anon, authenticated;
+grant all on public.loyalty_point_adjustments to service_role;
 
 create or replace function public.claim_loyalty_reward(p_member_phone text, p_reward_code text)
 returns jsonb
@@ -39,10 +50,11 @@ begin
     raise exception 'MEMBER_NOT_FOUND';
   end if;
 
-  select coalesce(sum(points), 0)::integer into current_points
-  from public.loyalty_receipts
-  where member_phone = p_member_phone
-    and used_at >= now() - interval '12 months';
+  select coalesce(sum(points), 0)::integer into current_points from (
+    select points from public.loyalty_receipts where member_phone = p_member_phone and used_at >= now() - interval '12 months'
+    union all
+    select points from public.loyalty_point_adjustments where member_phone = p_member_phone and adjusted_at >= now() - interval '12 months'
+  ) point_events;
 
   if current_points < reward_threshold then
     raise exception 'MILESTONE_NOT_REACHED';
@@ -66,3 +78,52 @@ $$;
 
 revoke all on function public.claim_loyalty_reward(text, text) from public, anon, authenticated;
 grant execute on function public.claim_loyalty_reward(text, text) to service_role;
+
+create or replace function public.admin_set_loyalty_points(p_member_phone text, p_target_points integer)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  current_points integer;
+  point_delta integer;
+  adjustment_row public.loyalty_point_adjustments%rowtype;
+begin
+  if p_target_points is null or p_target_points < 0 or p_target_points > 1000000000 then
+    raise exception 'INVALID_TARGET_POINTS';
+  end if;
+
+  perform 1 from public.loyalty_members where phone = p_member_phone for update;
+  if not found then
+    raise exception 'MEMBER_NOT_FOUND';
+  end if;
+
+  select coalesce(sum(points), 0)::integer into current_points from (
+    select points from public.loyalty_receipts where member_phone = p_member_phone and used_at >= now() - interval '12 months'
+    union all
+    select points from public.loyalty_point_adjustments where member_phone = p_member_phone and adjusted_at >= now() - interval '12 months'
+  ) point_events;
+
+  point_delta := p_target_points - current_points;
+  if point_delta <> 0 then
+    insert into public.loyalty_point_adjustments(member_phone, points)
+    values (p_member_phone, point_delta)
+    returning * into adjustment_row;
+  end if;
+
+  return jsonb_build_object(
+    'member_phone', p_member_phone,
+    'current_points', p_target_points,
+    'adjustment', case when point_delta = 0 then null else jsonb_build_object(
+      'member_phone', adjustment_row.member_phone,
+      'points', adjustment_row.points,
+      'reason', adjustment_row.reason,
+      'adjusted_at', adjustment_row.adjusted_at
+    ) end
+  );
+end;
+$$;
+
+revoke all on function public.admin_set_loyalty_points(text, integer) from public, anon, authenticated;
+grant execute on function public.admin_set_loyalty_points(text, integer) to service_role;

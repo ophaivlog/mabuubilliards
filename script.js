@@ -2930,6 +2930,7 @@ let miniGameHistory = [];
 let loyaltyMembers = [];
 let loyaltyReceipts = [];
 let loyaltyRewardClaims = [];
+let loyaltyPointAdjustments = [];
 let miniGameCloudReady = false;
 let miniGameRotation = 0;
 let miniGameSpinning = false;
@@ -4937,11 +4938,17 @@ function getLoyaltyRank(points) {
 function getLoyaltyPointsLast12Months(phone) {
   const cutoff = Date.now() - 365 * 24 * 60 * 60 * 1000;
   const normalizedPhone = normalizeLoyaltyPhone(phone);
-  return loadLoyaltyReceipts().reduce((total, receipt) => {
+  const receiptPoints = loadLoyaltyReceipts().reduce((total, receipt) => {
     const usedAt = new Date(receipt.usedAt).getTime();
     if (normalizeLoyaltyPhone(receipt.memberPhone) !== normalizedPhone || !Number.isFinite(usedAt) || usedAt < cutoff) return total;
     return total + (Number(receipt.points) || 0);
   }, 0);
+  const adjustmentPoints = loyaltyPointAdjustments.reduce((total, adjustment) => {
+    const adjustedAt = new Date(adjustment.adjustedAt).getTime();
+    if (normalizeLoyaltyPhone(adjustment.memberPhone) !== normalizedPhone || !Number.isFinite(adjustedAt) || adjustedAt < cutoff) return total;
+    return total + (Number(adjustment.points) || 0);
+  }, 0);
+  return Math.max(0, receiptPoints + adjustmentPoints);
 }
 
 function renderAdminLoyalty() {
@@ -4977,24 +4984,34 @@ function renderAdminLoyalty() {
       }).join("")
     : `<tr><td colspan="6">${members.length ? "Không tìm thấy thành viên phù hợp." : "Chưa có thành viên."}</td></tr>`;
 
-  const receipts = [...loadLoyaltyReceipts()].sort((first, second) => {
-    const firstTime = new Date(first.usedAt).getTime();
-    const secondTime = new Date(second.usedAt).getTime();
+  const receipts = [
+    ...loadLoyaltyReceipts().map((receipt) => ({ ...receipt, time: receipt.usedAt, label: `#${receipt.invoiceNumber || "-"}` })),
+    ...loyaltyPointAdjustments.map((adjustment) => ({
+      memberPhone: adjustment.memberPhone,
+      points: adjustment.points,
+      time: adjustment.adjustedAt,
+      label: adjustment.reason || "Admin điều chỉnh điểm",
+      isAdjustment: true,
+    })),
+  ].sort((first, second) => {
+    const firstTime = new Date(first.time).getTime();
+    const secondTime = new Date(second.time).getTime();
     if (!Number.isFinite(firstTime)) return Number.isFinite(secondTime) ? 1 : 0;
     if (!Number.isFinite(secondTime)) return -1;
     return secondTime - firstTime;
   });
   historyBody.innerHTML = receipts.length
     ? receipts.map((receipt, index) => {
-        const usedAt = new Date(receipt.usedAt);
+        const usedAt = new Date(receipt.time);
         const timestamp = Number.isNaN(usedAt.getTime()) ? "-" : usedAt.toLocaleString("vi-VN");
         const points = Number(receipt.points) || 0;
+        const memberName = receipt.memberName || loadLoyaltyMembers().find((member) => normalizeLoyaltyPhone(member.phone) === normalizeLoyaltyPhone(receipt.memberPhone))?.name || "-";
         return `
           <tr>
             <td>${index + 1}</td>
-            <td>${escapeHtml(receipt.invoiceNumber || "-")}</td>
-            <td>${points.toLocaleString("vi-VN")}</td>
-            <td>${escapeHtml(receipt.memberName || "-")}</td>
+            <td>${receipt.isAdjustment ? "Điều chỉnh điểm" : escapeHtml(receipt.label)}</td>
+            <td>${points > 0 ? "+" : ""}${points.toLocaleString("vi-VN")}</td>
+            <td>${escapeHtml(memberName)}</td>
             <td>${escapeHtml(timestamp)}</td>
           </tr>
         `;
@@ -5008,6 +5025,15 @@ function loadLoyaltyMembers() {
 
 function loadLoyaltyReceipts() {
   return loyaltyReceipts;
+}
+
+function normalizeCloudPointAdjustment(adjustment) {
+  return {
+    memberPhone: adjustment.member_phone || adjustment.memberPhone || "",
+    points: Number(adjustment.points) || 0,
+    reason: adjustment.reason || "Admin điều chỉnh điểm",
+    adjustedAt: adjustment.adjusted_at || adjustment.adjustedAt || "",
+  };
 }
 
 function openAdminLoyaltyMemberCard(phone, trigger) {
@@ -5038,31 +5064,53 @@ function openAdminLoyaltyMemberCard(phone, trigger) {
         : `<span class="loyalty-reward-locked">Còn ${(threshold - annualPoints).toLocaleString("vi-VN")} điểm</span><button class="loyalty-reward-claim is-locked" type="button" disabled>CHƯA ĐỦ ĐIỂM</button>`;
     return `<article class="admin-reward-card ${claimed ? "is-claimed" : ""}"><span class="admin-reward-icon ${code === "chalk_3000" ? "loyalty-reward-chalk" : ""}" aria-hidden="true">${icon}</span><div class="admin-reward-copy"><strong>${threshold.toLocaleString("vi-VN")} điểm · ${label}</strong>${status}</div></article>`;
   }).join("");
-  const receipts = [...loyaltyReceipts]
-    .filter((receipt) => normalizeLoyaltyPhone(receipt.memberPhone) === normalizeLoyaltyPhone(member.phone))
-    .sort((first, second) => new Date(second.usedAt).getTime() - new Date(first.usedAt).getTime())
+  const receipts = [
+    ...loyaltyReceipts
+      .filter((receipt) => normalizeLoyaltyPhone(receipt.memberPhone) === normalizeLoyaltyPhone(member.phone))
+      .map((receipt) => ({ ...receipt, time: receipt.usedAt, label: `Biên lai #${receipt.invoiceNumber || "-"}` })),
+    ...loyaltyPointAdjustments
+      .filter((adjustment) => normalizeLoyaltyPhone(adjustment.memberPhone) === normalizeLoyaltyPhone(member.phone))
+      .map((adjustment) => ({ ...adjustment, time: adjustment.adjustedAt, label: adjustment.reason || "Admin điều chỉnh điểm", isAdjustment: true })),
+  ]
+    .sort((first, second) => new Date(second.time).getTime() - new Date(first.time).getTime())
     .slice(0, 5);
   const receiptRows = receipts.length
     ? receipts.map((receipt) => {
-        const date = new Date(receipt.usedAt);
+        const date = new Date(receipt.time);
         const timestamp = Number.isNaN(date.getTime()) ? "" : date.toLocaleString("vi-VN");
-        return `<div class="admin-member-receipt-row"><span><small>${escapeHtml(timestamp)}</small><strong>Biên lai #${escapeHtml(receipt.invoiceNumber || "-")}</strong></span><b>+${(Number(receipt.points) || 0).toLocaleString("vi-VN")} điểm</b></div>`;
+        const pointValue = Number(receipt.points) || 0;
+        const pointText = `${pointValue > 0 ? "+" : ""}${pointValue.toLocaleString("vi-VN")} điểm`;
+        return `<div class="admin-member-receipt-row"><span><small>${escapeHtml(timestamp)}</small><strong>${escapeHtml(receipt.label)}</strong></span><b>${pointText}</b></div>`;
       }).join("")
     : '<p class="admin-member-empty">Chưa có lịch sử tích điểm.</p>';
 
   document.querySelector("#adminMemberCardTitle").textContent = member.name || "Thẻ hội viên";
+  modal.dataset.memberPhone = member.phone;
   content.innerHTML = `
     <section class="loyalty-member admin-loyalty-member-card">
       <div class="loyalty-member-scorecard">
         <div class="loyalty-member-top"><div><p class="loyalty-greeting">Xin chào, <strong>${escapeHtml(member.name || "Hội viên")}</strong></p><p class="loyalty-phone">${escapeHtml(member.phone || "")}</p></div><span class="loyalty-rank loyalty-rank-${rank.className}"><span class="loyalty-rank-medal" aria-hidden="true">${rank.medal}</span>${rank.name}</span></div>
         <div class="loyalty-score"><strong>${annualPoints.toLocaleString("vi-VN")}</strong><span>Điểm tích lũy trong 12 tháng</span></div>
       </div>
-      <div class="loyalty-stat-grid"><article class="loyalty-stat"><div><small>Điểm trong 12 tháng</small><strong>${annualPoints.toLocaleString("vi-VN")}</strong></div></article><article class="loyalty-stat"><div><small>Chi tiêu tương ứng</small><strong>${(annualPoints * 1000).toLocaleString("vi-VN")} ₫</strong></div></article></div>
+      <div class="loyalty-stat-grid">
+        <article class="loyalty-stat">
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V9m5 10V5m5 14v-7m5 7V3"></path></svg>
+          <div><small>Điểm trong 12 tháng</small><strong id="loyaltyMemberAnnualPoints">${annualPoints.toLocaleString("vi-VN")}</strong></div>
+        </article>
+        <article class="loyalty-stat">
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"></ellipse><path d="M4 5v5c0 1.7 3.6 3 8 3s8-1.3 8-3V5m-16 5v5c0 1.7 3.6 3 8 3s8-1.3 8-3v-5m-16 5v4c0 1.7 3.6 3 8 3s8-1.3 8-3v-4"></path></svg>
+          <div><small>Chi tiêu tương ứng</small><strong id="loyaltyMemberAnnualSpend">${(annualPoints * 1000).toLocaleString("vi-VN")} ₫</strong></div>
+        </article>
+      </div>
       <details class="loyalty-benefits" open><summary>🎁 Quyền lợi của bạn <span>Xem chi tiết ＋</span></summary><div class="loyalty-monthly-perk"><div class="loyalty-perk-trophy" aria-hidden="true">🏆</div><div class="loyalty-perk-content"><p class="loyalty-perk-headline">MỖI THÁNG ĐỦ <strong>500 ĐIỂM</strong><br>THAM GIA GIẢI HỘI VIÊN MIỄN PHÍ</p><div class="loyalty-perk-extras"><span><b aria-hidden="true">🎟</b> MIỄN LỆ PHÍ</span><i aria-hidden="true"></i><span><b aria-hidden="true">◷</b> MIỄN TIỀN GIỜ</span></div></div></div></details>
       <section class="admin-member-rewards"><h3>CỘT MỐC NHẬN QUÀ</h3><div class="admin-member-rewards-grid">${rewardCards}</div></section>
       <section class="admin-member-receipts"><h3>Lịch sử tích điểm gần đây</h3>${receiptRows}</section>
     </section>`;
   modal.hidden = false;
+  const pointsTarget = document.querySelector("#adminMemberPointsTarget");
+  const pointsNotice = document.querySelector("#adminMemberPointsNotice");
+  if (pointsTarget) pointsTarget.value = String(annualPoints);
+  if (pointsNotice) pointsNotice.hidden = true;
   modal._returnFocus = trigger || document.activeElement;
   modal.querySelector("[data-close-admin-member-card]")?.focus();
 }
@@ -5095,6 +5143,48 @@ function bindAdminLoyaltyMemberCard() {
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && !modal.hidden) close();
   });
+
+  document.querySelector("#adminMemberPointsForm")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const target = document.querySelector("#adminMemberPointsTarget");
+    const notice = document.querySelector("#adminMemberPointsNotice");
+    const submitButton = form.querySelector("button[type='submit']");
+    const targetPoints = Number(target.value);
+    const phone = modal.dataset.memberPhone || "";
+    if (!Number.isSafeInteger(targetPoints) || targetPoints < 0) {
+      notice.textContent = "Nhập tổng điểm là số nguyên từ 0 trở lên.";
+      notice.dataset.type = "error";
+      notice.hidden = false;
+      return;
+    }
+
+    submitButton.disabled = true;
+    notice.hidden = true;
+    try {
+      const headers = await adminAuthorizationHeaders();
+      const data = await requestSharedData("/api/shared-data", {
+        method: "POST",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "set-member-points", phone, targetPoints }),
+      });
+      if (data.adjustment) loyaltyPointAdjustments.unshift(normalizeCloudPointAdjustment(data.adjustment));
+      renderAdminLoyalty();
+      openAdminLoyaltyMemberCard(phone);
+      const pointsNotice = document.querySelector("#adminMemberPointsNotice");
+      pointsNotice.textContent = data.adjustment
+        ? `Đã cập nhật tổng điểm thành ${targetPoints.toLocaleString("vi-VN")} điểm.`
+        : "Tổng điểm đã đúng, không có thay đổi.";
+      pointsNotice.dataset.type = "ok";
+      pointsNotice.hidden = false;
+    } catch (error) {
+      notice.textContent = error.message;
+      notice.dataset.type = "error";
+      notice.hidden = false;
+    } finally {
+      submitButton.disabled = false;
+    }
+  });
 }
 
 function normalizeCloudMember(member) {
@@ -5124,6 +5214,7 @@ async function loadAdminLoyaltyCloud() {
   loyaltyMembers = (data.members || []).map(normalizeCloudMember);
   loyaltyReceipts = (data.receipts || []).map(normalizeCloudReceipt);
   loyaltyRewardClaims = data.rewardClaims || [];
+  loyaltyPointAdjustments = (data.pointAdjustments || []).map(normalizeCloudPointAdjustment);
   renderAdminLoyalty();
 }
 
@@ -5285,10 +5376,15 @@ function bindLoyaltyForms() {
     const body = document.querySelector("#loyaltyUsedReceiptsBody");
     const normalizedPhone = normalizeLoyaltyPhone(phone);
     historyPhone = normalizedPhone;
-    const receipts = loadLoyaltyReceipts().filter(
-      (receipt) => normalizeLoyaltyPhone(receipt.memberPhone) === normalizedPhone,
-    );
-    const orderedReceipts = [...receipts].reverse();
+    const receipts = [
+      ...loadLoyaltyReceipts()
+        .filter((receipt) => normalizeLoyaltyPhone(receipt.memberPhone) === normalizedPhone)
+        .map((receipt) => ({ ...receipt, time: receipt.usedAt, label: `Biên lai #${receipt.invoiceNumber || "-"}` })),
+      ...loyaltyPointAdjustments
+        .filter((adjustment) => normalizeLoyaltyPhone(adjustment.memberPhone) === normalizedPhone)
+        .map((adjustment) => ({ ...adjustment, time: adjustment.adjustedAt, label: adjustment.reason || "Admin điều chỉnh điểm", isAdjustment: true })),
+    ].sort((first, second) => new Date(second.time).getTime() - new Date(first.time).getTime());
+    const orderedReceipts = receipts;
     const visibleReceipts = historyExpanded ? orderedReceipts : orderedReceipts.slice(0, 3);
     if (historyToggle) {
       historyToggle.hidden = receipts.length <= 3;
@@ -5297,16 +5393,16 @@ function bindLoyaltyForms() {
     }
     body.innerHTML = receipts.length
       ? visibleReceipts.map((receipt) => {
-          const usedAt = new Date(receipt.usedAt);
+          const usedAt = new Date(receipt.time);
           const timestamp = Number.isNaN(usedAt.getTime()) ? "Đã ghi nhận" : `${usedAt.toLocaleDateString("vi-VN", {
             day: "2-digit", month: "2-digit", year: "numeric",
           })} · ${usedAt.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}`;
-          const points = Number(receipt.points || 0).toLocaleString("vi-VN");
-          const isPending = ["pending", "pending_review", "review"].includes(String(receipt.status || "").toLowerCase());
+          const isPending = !receipt.isAdjustment && ["pending", "pending_review", "review"].includes(String(receipt.status || "").toLowerCase());
+          const pointsText = `${Number(receipt.points) > 0 ? "+ " : ""}${Number(receipt.points || 0).toLocaleString("vi-VN")} điểm`;
           return `
             <article class="loyalty-history-row">
-              <div class="loyalty-history-info"><small>${escapeHtml(timestamp)}</small><p>Biên lai #${escapeHtml(receipt.invoiceNumber || "-")}</p></div>
-              <div class="loyalty-history-result"><small class="${isPending ? "pending" : ""}">${isPending ? "Chờ duyệt" : "Đã cộng điểm"}</small><strong>${isPending ? "Chưa cộng điểm" : `+ ${points} điểm`}</strong></div>
+              <div class="loyalty-history-info"><small>${escapeHtml(timestamp)}</small><p>${escapeHtml(receipt.label)}</p></div>
+              <div class="loyalty-history-result"><small class="${isPending ? "pending" : ""}">${isPending ? "Chờ duyệt" : receipt.isAdjustment ? "Điều chỉnh điểm" : "Đã cộng điểm"}</small><strong>${isPending ? "Chưa cộng điểm" : pointsText}</strong></div>
             </article>
           `;
         }).join("")
@@ -5341,6 +5437,7 @@ function bindLoyaltyForms() {
       loyaltyMembers = member ? [member] : [];
       loyaltyReceipts = (data.receipts || []).map(normalizeCloudReceipt);
       rewardClaims = data.rewardClaims || [];
+      loyaltyPointAdjustments = (data.pointAdjustments || []).map(normalizeCloudPointAdjustment);
       notice.hidden = true;
       if (member) {
         showMember(member);
@@ -5383,6 +5480,7 @@ function bindLoyaltyForms() {
       loyaltyMembers = [normalizeCloudMember(data.member)];
       loyaltyReceipts = [];
       rewardClaims = [];
+      loyaltyPointAdjustments = [];
       showMember(loyaltyMembers[0]);
       lookupPhone.value = phone;
       notice.textContent = "Đã tạo thành viên trên cloud.";

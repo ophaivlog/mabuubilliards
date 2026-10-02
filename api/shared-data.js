@@ -94,7 +94,13 @@ module.exports = async function handler(req, res) {
         const members = await request(`loyalty_members?phone=eq.${encodeURIComponent(phone)}&select=phone,name,points,created_at`);
         const receipts = await request(`loyalty_receipts?member_phone=eq.${encodeURIComponent(phone)}&select=invoice_number,member_phone,member_name,points,used_at&order=used_at.desc`);
         const rewardClaims = await request(`loyalty_reward_claims?member_phone=eq.${encodeURIComponent(phone)}&select=reward_code,claimed_at&order=claimed_at.desc`);
-        return json(res, 200, { ok: true, member: members?.[0] || null, receipts: receipts || [], rewardClaims: rewardClaims || [] });
+        let pointAdjustments = [];
+        try {
+          pointAdjustments = await request(`loyalty_point_adjustments?member_phone=eq.${encodeURIComponent(phone)}&select=member_phone,points,reason,adjusted_at&order=adjusted_at.desc`);
+        } catch (error) {
+          if (error.statusCode !== 404) throw error;
+        }
+        return json(res, 200, { ok: true, member: members?.[0] || null, receipts: receipts || [], rewardClaims: rewardClaims || [], pointAdjustments: pointAdjustments || [] });
       }
       if (type === "admin-loyalty") {
         if (!(await requireAdmin(req.headers.authorization))) return json(res, 401, { ok: false, message: "Cần đăng nhập admin để xem dữ liệu thành viên." });
@@ -106,7 +112,13 @@ module.exports = async function handler(req, res) {
         } catch (error) {
           if (error.statusCode !== 404) throw error;
         }
-        return json(res, 200, { ok: true, members: members || [], receipts: receipts || [], rewardClaims: rewardClaims || [] });
+        let pointAdjustments = [];
+        try {
+          pointAdjustments = await request("loyalty_point_adjustments?select=member_phone,points,reason,adjusted_at&order=adjusted_at.desc");
+        } catch (error) {
+          if (error.statusCode !== 404) throw error;
+        }
+        return json(res, 200, { ok: true, members: members || [], receipts: receipts || [], rewardClaims: rewardClaims || [], pointAdjustments: pointAdjustments || [] });
       }
       return json(res, 400, { ok: false, message: "Loại dữ liệu không hợp lệ." });
     }
@@ -150,6 +162,20 @@ module.exports = async function handler(req, res) {
       return json(res, 200, { ok: true, claim: rows });
     }
 
+    if (body.action === "set-member-points") {
+      if (!(await requireAdmin(req.headers.authorization))) return json(res, 401, { ok: false, message: "Cần đăng nhập admin để sửa điểm." });
+      const phone = normalizePhone(body.phone);
+      const targetPoints = Number(body.targetPoints);
+      if (phone.length < 9 || phone.length > 11 || !Number.isSafeInteger(targetPoints) || targetPoints < 0 || targetPoints > 1000000000) {
+        return json(res, 400, { ok: false, message: "Số điện thoại hoặc tổng điểm mới không hợp lệ." });
+      }
+      const result = await request("rpc/admin_set_loyalty_points", {
+        method: "POST",
+        body: JSON.stringify({ p_member_phone: phone, p_target_points: targetPoints }),
+      });
+      return json(res, 200, { ok: true, ...result });
+    }
+
     if (body.action === "record-spin") {
       const prize = String(body.prize || "").trim().slice(0, 120);
       if (!prize) return json(res, 400, { ok: false, message: "Phần thưởng không hợp lệ." });
@@ -190,12 +216,16 @@ module.exports = async function handler(req, res) {
     const rawMessage = error.message || "";
     const message = rawMessage.includes("MILESTONE_NOT_REACHED")
       ? "Bạn chưa đạt đủ điểm trong 12 tháng để nhận mốc quà này."
+      : rawMessage.includes("INVALID_TARGET_POINTS")
+        ? "Tổng điểm mới phải từ 0 đến 1.000.000.000."
       : rawMessage.includes("REWARD_ALREADY_CLAIMED")
         ? "Mốc quà này đã được nhận trước đó."
         : rawMessage.includes("INVALID_REWARD")
           ? "Mốc quà không hợp lệ."
           : rawMessage.includes("MEMBER_NOT_FOUND")
             ? "Không tìm thấy hội viên."
+            : rawMessage.includes("INVALID_TARGET_POINTS")
+              ? "Tổng điểm mới không hợp lệ."
             : error.code === "23505"
       ? "Số điện thoại đã đăng ký hoặc phiếu này đã được sử dụng."
       : rawMessage || "Không xử lý được dữ liệu Supabase.";

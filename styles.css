@@ -4678,6 +4678,58 @@ html[data-theme="dark"] .loyalty-notice[data-type="error"] {
   min-width: 0;
 }
 
+.admin-member-points-form {
+  display: grid;
+  gap: 8px;
+  padding-top: 13px;
+  border-top: 1px solid var(--line);
+}
+
+.admin-member-points-form > label {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.admin-member-points-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.admin-member-points-controls input {
+  width: 100%;
+  min-width: 0;
+  height: 42px;
+  padding: 0 11px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+}
+
+.admin-member-points-controls input:focus-visible {
+  outline: 2px solid var(--pink);
+  outline-offset: 2px;
+}
+
+.admin-member-points-controls button {
+  min-height: 42px;
+  padding-inline: 15px;
+}
+
+.admin-member-points-form > p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.admin-member-points-form .loyalty-notice[hidden] {
+  display: none;
+}
+
 .admin-loyalty-member-card {
   max-width: none;
   gap: 12px;
