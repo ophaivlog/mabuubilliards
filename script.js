@@ -5285,6 +5285,7 @@ function bindLoyaltyForms() {
       if (uploadFile.size > 6 * 1024 * 1024) {
         throw new Error("Ảnh sau khi tối ưu vẫn vượt quá giới hạn 6 MB. Vui lòng chọn ảnh nhỏ hơn hoặc chụp lại.");
       }
+      notice.textContent = "Ảnh đã tối ưu. Đang gửi lên AI để đọc hóa đơn...";
       const dataUrl = await new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(String(reader.result || ""));
