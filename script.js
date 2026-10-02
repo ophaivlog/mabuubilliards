@@ -2835,6 +2835,19 @@ function bindTabs() {
   const buttons = document.querySelectorAll(".tab, .nav-submenu button, .camera-view-button");
   const topTabs = document.querySelectorAll(".tab");
   const panels = document.querySelectorAll(".panel");
+  const availableTabs = new Set([
+    ...[...topTabs].map((button) => button.dataset.tab),
+    ...[...panels].map((panel) => panel.id),
+  ]);
+  let lastRouteUrl = window.location.href;
+
+  const tabFromLocation = () => {
+    const hashTab = decodeURIComponent(window.location.hash.replace(/^#/, ""));
+    const queryTab = new URLSearchParams(window.location.search).get("tab");
+    const requestedTab = hashTab || queryTab;
+    if (requestedTab === "loyalty" && availableTabs.has("points")) return "points";
+    return availableTabs.has(requestedTab) ? requestedTab : "home";
+  };
 
   const activate = (tabName, options = {}) => {
     if (tabName === "camera") {
@@ -2866,6 +2879,14 @@ function bindTabs() {
     }
     if (options.focusTournamentName) {
       document.querySelector("#tournamentName")?.focus();
+    }
+    if (options.updateUrl !== false) {
+      const url = new URL(window.location.href);
+      url.hash = tabName;
+      if (url.href !== window.location.href) {
+        window.history.pushState({ tab: tabName }, "", url);
+        lastRouteUrl = window.location.href;
+      }
     }
   };
 
@@ -2907,10 +2928,14 @@ function bindTabs() {
   });
   document.querySelector("[data-open-create-tournament]")?.addEventListener("click", openCreateTournamentModal);
 
-  const initialTab = new URLSearchParams(window.location.search).get("tab");
-  if (initialTab && [...topTabs].some((button) => button.dataset.tab === initialTab)) {
-    activate(initialTab);
-  }
+  const syncTabFromLocation = () => {
+    if (lastRouteUrl === window.location.href) return;
+    lastRouteUrl = window.location.href;
+    activate(tabFromLocation(), { updateUrl: false });
+  };
+  window.addEventListener("popstate", syncTabFromLocation);
+  window.addEventListener("hashchange", syncTabFromLocation);
+  activate(tabFromLocation(), { updateUrl: false });
 }
 
 function keepActivePanelVisible() {
