@@ -2929,6 +2929,7 @@ let miniGamePrizes = [...DEFAULT_MINI_GAME_PRIZES];
 let miniGameHistory = [];
 let loyaltyMembers = [];
 let loyaltyReceipts = [];
+let loyaltyRewardClaims = [];
 let miniGameCloudReady = false;
 let miniGameRotation = 0;
 let miniGameSpinning = false;
@@ -4964,7 +4965,7 @@ function renderAdminLoyalty() {
         const rank = getLoyaltyRank(annualPoints);
         const annualSpend = annualPoints * 1000;
         return `
-          <tr data-loyalty-member-phone="${escapeHtml(member.phone || "")}">
+          <tr class="loyalty-member-row" data-loyalty-member-phone="${escapeHtml(member.phone || "")}" tabindex="0" aria-haspopup="dialog" aria-label="Mở thẻ hội viên ${escapeHtml(member.name || "")}">
             <td>${index + 1}</td>
             <td>${escapeHtml(member.name || "-")}</td>
             <td>${escapeHtml(member.phone || "-")}</td>
@@ -5009,6 +5010,93 @@ function loadLoyaltyReceipts() {
   return loyaltyReceipts;
 }
 
+function openAdminLoyaltyMemberCard(phone, trigger) {
+  const member = loyaltyMembers.find((item) => normalizeLoyaltyPhone(item.phone) === normalizeLoyaltyPhone(phone));
+  const modal = document.querySelector("#adminMemberCardModal");
+  const content = document.querySelector("#adminMemberCardContent");
+  if (!member || !modal || !content) return;
+
+  const annualPoints = getLoyaltyPointsLast12Months(member.phone);
+  const rank = getLoyaltyRank(annualPoints);
+  const claimedCodes = new Set(loyaltyRewardClaims
+    .filter((claim) => normalizeLoyaltyPhone(claim.member_phone || claim.memberPhone) === normalizeLoyaltyPhone(member.phone))
+    .map((claim) => claim.reward_code || claim.rewardCode));
+  const rewards = [
+    ["glove_1500", 1500, "🧤", "Bao tay cá nhân"],
+    ["chalk_3000", 3000, "V10", "Lơ Taom V10 chính hãng"],
+    ["shirt_5000", 5000, "👕", "Áo CLB Ma Buu"],
+    ["cash_7000", 7000, "💵", "Thưởng 500.000đ tiền mặt"],
+    ["cue_15000", 15000, "🎱", "Cơ cá nhân"],
+  ];
+  const rewardCards = rewards.map(([code, threshold, icon, label]) => {
+    const claimed = claimedCodes.has(code);
+    const reached = annualPoints >= threshold;
+    const status = claimed
+      ? '<span class="loyalty-reward-stamp">ĐÃ NHẬN</span>'
+      : reached
+        ? '<span class="admin-reward-eligible">ĐỦ ĐIỂM · CHƯA NHẬN</span>'
+        : `<span class="loyalty-reward-locked">Còn ${(threshold - annualPoints).toLocaleString("vi-VN")} điểm</span>`;
+    return `<article class="admin-reward-card ${claimed ? "is-claimed" : ""}"><span class="admin-reward-icon ${code === "chalk_3000" ? "loyalty-reward-chalk" : ""}" aria-hidden="true">${icon}</span><span class="admin-reward-copy"><strong>${threshold.toLocaleString("vi-VN")} điểm · ${label}</strong>${status}</span></article>`;
+  }).join("");
+  const receipts = [...loyaltyReceipts]
+    .filter((receipt) => normalizeLoyaltyPhone(receipt.memberPhone) === normalizeLoyaltyPhone(member.phone))
+    .sort((first, second) => new Date(second.usedAt).getTime() - new Date(first.usedAt).getTime())
+    .slice(0, 5);
+  const receiptRows = receipts.length
+    ? receipts.map((receipt) => {
+        const date = new Date(receipt.usedAt);
+        const timestamp = Number.isNaN(date.getTime()) ? "" : date.toLocaleString("vi-VN");
+        return `<div class="admin-member-receipt-row"><span><small>${escapeHtml(timestamp)}</small><strong>Biên lai #${escapeHtml(receipt.invoiceNumber || "-")}</strong></span><b>+${(Number(receipt.points) || 0).toLocaleString("vi-VN")} điểm</b></div>`;
+      }).join("")
+    : '<p class="admin-member-empty">Chưa có lịch sử tích điểm.</p>';
+
+  document.querySelector("#adminMemberCardTitle").textContent = member.name || "Thẻ hội viên";
+  content.innerHTML = `
+    <section class="loyalty-member admin-loyalty-member-card">
+      <div class="loyalty-member-scorecard">
+        <div class="loyalty-member-top"><div><p class="loyalty-greeting">Xin chào, <strong>${escapeHtml(member.name || "Hội viên")}</strong></p><p class="loyalty-phone">${escapeHtml(member.phone || "")}</p></div><span class="loyalty-rank loyalty-rank-${rank.className}"><span class="loyalty-rank-medal" aria-hidden="true">${rank.medal}</span>${rank.name}</span></div>
+        <div class="loyalty-score"><strong>${annualPoints.toLocaleString("vi-VN")}</strong><span>Điểm tích lũy trong 12 tháng</span></div>
+      </div>
+      <div class="loyalty-stat-grid"><article class="loyalty-stat"><div><small>Điểm trong 12 tháng</small><strong>${annualPoints.toLocaleString("vi-VN")}</strong></div></article><article class="loyalty-stat"><div><small>Chi tiêu tương ứng</small><strong>${(annualPoints * 1000).toLocaleString("vi-VN")} ₫</strong></div></article></div>
+      <details class="loyalty-benefits" open><summary>🎁 Quyền lợi hội viên</summary><div class="loyalty-monthly-perk"><div class="loyalty-perk-trophy" aria-hidden="true">🏆</div><div class="loyalty-perk-content"><p class="loyalty-perk-headline">MỖI THÁNG ĐỦ <strong>500 ĐIỂM</strong><br>THAM GIA GIẢI HỘI VIÊN MIỄN PHÍ</p><div class="loyalty-perk-extras"><span><b aria-hidden="true">🎟</b> MIỄN LỆ PHÍ</span><i aria-hidden="true"></i><span><b aria-hidden="true">◷</b> MIỄN TIỀN GIỜ</span></div></div></div></details>
+      <section class="admin-member-rewards"><h3>CỘT MỐC NHẬN QUÀ</h3><div class="admin-member-rewards-grid">${rewardCards}</div></section>
+      <section class="admin-member-receipts"><h3>Lịch sử tích điểm gần đây</h3>${receiptRows}</section>
+    </section>`;
+  modal.hidden = false;
+  modal._returnFocus = trigger || document.activeElement;
+  modal.querySelector("[data-close-admin-member-card]")?.focus();
+}
+
+function bindAdminLoyaltyMemberCard() {
+  const body = document.querySelector("#adminLoyaltyMembersBody");
+  const modal = document.querySelector("#adminMemberCardModal");
+  if (!body || !modal) return;
+
+  const close = () => {
+    const returnFocus = modal._returnFocus;
+    modal.hidden = true;
+    returnFocus?.focus?.();
+  };
+  body.addEventListener("click", (event) => {
+    const row = event.target.closest("tr[data-loyalty-member-phone]");
+    if (row) openAdminLoyaltyMemberCard(row.dataset.loyaltyMemberPhone, row);
+  });
+  body.addEventListener("keydown", (event) => {
+    const row = event.target.closest("tr[data-loyalty-member-phone]");
+    if (row && (event.key === "Enter" || event.key === " ")) {
+      event.preventDefault();
+      openAdminLoyaltyMemberCard(row.dataset.loyaltyMemberPhone, row);
+    }
+  });
+  modal.querySelector("[data-close-admin-member-card]")?.addEventListener("click", close);
+  modal.addEventListener("click", (event) => {
+    if (event.target === modal) close();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !modal.hidden) close();
+  });
+}
+
 function normalizeCloudMember(member) {
   return member ? {
     phone: member.phone,
@@ -5035,6 +5123,7 @@ async function loadAdminLoyaltyCloud() {
   const data = await requestSharedData("/api/shared-data?type=admin-loyalty", { headers });
   loyaltyMembers = (data.members || []).map(normalizeCloudMember);
   loyaltyReceipts = (data.receipts || []).map(normalizeCloudReceipt);
+  loyaltyRewardClaims = data.rewardClaims || [];
   renderAdminLoyalty();
 }
 
@@ -5102,7 +5191,7 @@ function bindLoyaltyForms() {
       } else if (reached) {
         state.innerHTML = `<span class="loyalty-reward-ready">${rewardPreviewMode ? "ĐỦ ĐIỂM · XEM THỬ" : "ĐÃ ĐẠT MỐC"}</span><button class="loyalty-reward-claim" type="button" data-claim-reward="${code}" ${rewardPreviewMode ? "disabled" : ""}>NHẬN QUÀ</button>`;
       } else {
-        state.innerHTML = `<span class="loyalty-reward-locked">Còn ${(requiredPoints - points).toLocaleString("vi-VN")} điểm</span>`;
+        state.innerHTML = `<span class="loyalty-reward-locked">Còn ${(requiredPoints - points).toLocaleString("vi-VN")} điểm</span><button class="loyalty-reward-claim is-locked" type="button" disabled>CHƯA ĐỦ ĐIỂM</button>`;
       }
     });
   }
@@ -6842,6 +6931,7 @@ function bindCameraSelector() {
 
 bindTabs();
 bindAdminLoyaltyViews();
+bindAdminLoyaltyMemberCard();
 bindLoyaltyForms();
 bindBracketFit();
 bindMiniGame();
