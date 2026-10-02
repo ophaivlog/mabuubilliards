@@ -162,12 +162,15 @@ begin
   ) point_events;
   if current_points < reward_threshold then raise exception 'MILESTONE_NOT_REACHED'; end if;
 
-  insert into public.loyalty_reward_claims(member_phone, reward_code)
-  values (p_member_phone, p_reward_code)
-  on conflict (member_phone, reward_code) do nothing;
+  select * into claim_row
+  from public.loyalty_reward_claims
+  where member_phone = p_member_phone and reward_code = p_reward_code
+  for update;
+  if not found then raise exception 'REWARD_NOT_CLAIMED'; end if;
+  if claim_row.handed_at is not null then raise exception 'REWARD_ALREADY_HANDED'; end if;
 
   update public.loyalty_reward_claims
-  set handed_at = coalesce(handed_at, now())
+  set handed_at = now()
   where member_phone = p_member_phone and reward_code = p_reward_code
   returning * into claim_row;
 

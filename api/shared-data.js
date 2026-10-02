@@ -237,9 +237,13 @@ module.exports = async function handler(req, res) {
         ? "Tổng điểm mới phải từ 0 đến 1.000.000.000."
       : rawMessage.includes("REWARD_ALREADY_CLAIMED")
         ? "Mốc quà này đã được nhận trước đó."
-        : rawMessage.includes("INVALID_REWARD")
-          ? "Mốc quà không hợp lệ."
-          : rawMessage.includes("MEMBER_NOT_FOUND")
+      : rawMessage.includes("INVALID_REWARD")
+        ? "Mốc quà không hợp lệ."
+        : rawMessage.includes("REWARD_NOT_CLAIMED")
+          ? "Khách chưa bấm nhận mốc quà này."
+          : rawMessage.includes("REWARD_ALREADY_HANDED")
+            ? "Mốc quà này đã được xác nhận trao rồi."
+        : rawMessage.includes("MEMBER_NOT_FOUND")
             ? "Không tìm thấy hội viên."
             : rawMessage.includes("INVALID_TARGET_POINTS")
               ? "Tổng điểm mới không hợp lệ."

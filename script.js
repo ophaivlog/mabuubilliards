@@ -5061,7 +5061,9 @@ function openAdminLoyaltyMemberCard(phone, trigger) {
     const status = handedAt
       ? '<span class="loyalty-reward-stamp">ĐÃ TRAO</span>'
       : reached
-        ? `<span class="admin-reward-eligible">${claim ? "HỘI VIÊN ĐÃ YÊU CẦU" : "ĐỦ ĐIỂM · CHƯA NHẬN"}</span><button class="loyalty-reward-claim admin-confirm-reward" type="button" data-admin-confirm-reward="${code}">XÁC NHẬN ĐÃ TRAO</button>`
+        ? claim
+          ? '<span class="admin-reward-eligible">HỘI VIÊN ĐÃ YÊU CẦU</span><button class="loyalty-reward-claim admin-confirm-reward" type="button" data-admin-confirm-reward="' + code + '">XÁC NHẬN ĐÃ TRAO</button>'
+          : '<span class="loyalty-reward-locked">Đủ điểm · Chờ khách nhận</span><button class="loyalty-reward-claim is-locked" type="button" disabled>CHỜ KHÁCH NHẬN</button>'
         : `<span class="loyalty-reward-locked">Còn ${(threshold - annualPoints).toLocaleString("vi-VN")} điểm</span><button class="loyalty-reward-claim is-locked" type="button" disabled>CHƯA ĐỦ ĐIỂM</button>`;
     return `<article class="admin-reward-card ${handedAt ? "is-claimed" : ""}"><span class="admin-reward-icon ${code === "chalk_3000" ? "loyalty-reward-chalk" : ""}" aria-hidden="true">${icon}</span><div class="admin-reward-copy"><strong>${threshold.toLocaleString("vi-VN")} điểm · ${label}</strong>${status}${handedAt ? `<small class="admin-reward-handed-at">Đã trao ${escapeHtml(new Date(handedAt).toLocaleString("vi-VN"))}</small>` : ""}</div></article>`;
   }).join("");
