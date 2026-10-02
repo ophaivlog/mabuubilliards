@@ -5056,6 +5056,18 @@ function showLoyaltySuccessToast(invoiceNumber) {
   }, 6000);
 }
 
+function showLoyaltyRewardSuccessToast() {
+  const toast = document.querySelector("#loyaltySuccessToast");
+  const message = document.querySelector("#loyaltySuccessToastMessage");
+  if (!toast || !message) return;
+  message.textContent = "Đã nhận quà thành công, vui lòng tới quầy để nhận quà.";
+  toast.hidden = false;
+  window.clearTimeout(loyaltySuccessToastTimer);
+  loyaltySuccessToastTimer = window.setTimeout(() => {
+    toast.hidden = true;
+  }, 6000);
+}
+
 function bindLoyaltyForms() {
   const lookupForm = document.querySelector("#loyaltyLookupForm");
   const lookupPhone = document.querySelector("#loyaltyLookupPhone");
@@ -5071,7 +5083,29 @@ function bindLoyaltyForms() {
   let scanningReceipt = false;
   let historyExpanded = false;
   let historyPhone = "";
+  let rewardClaims = [];
+  const rewardPreviewMode = new URLSearchParams(window.location.search).get("preview") === "rewards";
   if (!lookupForm || !lookupPhone || !registrationForm || !memberCard || !receiptForm || !receiptInput || !receiptPreview) return;
+
+  function renderRewardMilestones(points) {
+    document.querySelectorAll(".loyalty-reward-card[data-reward-code]").forEach((card) => {
+      const requiredPoints = Number(card.dataset.rewardPoints) || 0;
+      const code = card.dataset.rewardCode;
+      const state = card.querySelector(".loyalty-reward-state");
+      const claim = rewardClaims.find((item) => item.reward_code === code || item.rewardCode === code);
+      const reached = points >= requiredPoints;
+      card.classList.toggle("is-reached", reached);
+      card.classList.toggle("is-claimed", Boolean(claim));
+
+      if (claim) {
+        state.innerHTML = '<span class="loyalty-reward-stamp" aria-label="Đã nhận">ĐÃ NHẬN</span>';
+      } else if (reached) {
+        state.innerHTML = `<span class="loyalty-reward-ready">${rewardPreviewMode ? "ĐỦ ĐIỂM · XEM THỬ" : "ĐÃ ĐẠT MỐC"}</span><button class="loyalty-reward-claim" type="button" data-claim-reward="${code}" ${rewardPreviewMode ? "disabled" : ""}>NHẬN QUÀ</button>`;
+      } else {
+        state.innerHTML = `<span class="loyalty-reward-locked">Còn ${(requiredPoints - points).toLocaleString("vi-VN")} điểm</span>`;
+      }
+    });
+  }
 
   document.querySelector("[data-close-loyalty-toast]")?.addEventListener("click", () => {
     document.querySelector("#loyaltySuccessToast").hidden = true;
@@ -5108,8 +5142,55 @@ function bindLoyaltyForms() {
     rankBadge.className = `loyalty-rank loyalty-rank-${rank.className}`;
     document.querySelector("#loyaltyMemberMedal").textContent = rank.medal;
     document.querySelector("#loyaltyMemberRankName").textContent = rank.name;
+    renderRewardMilestones(annualPoints);
     renderLoyaltyReceipts(member.phone);
   };
+
+  if (rewardPreviewMode) {
+    memberCard.hidden = false;
+    document.querySelector("#loyaltyMemberName").textContent = "Khách xem thử";
+    document.querySelector("#loyaltyMemberPhone").textContent = "Bản xem giao diện";
+    document.querySelector("#loyaltyMemberPoints").textContent = "7.500";
+    document.querySelector("#loyaltyMemberAnnualPoints").textContent = "7.500";
+    document.querySelector("#loyaltyMemberAnnualSpend").textContent = "7.500.000 ₫";
+    document.querySelector("#loyaltyMemberMedal").textContent = "🥇";
+    document.querySelector("#loyaltyMemberRankName").textContent = "Vàng";
+    document.querySelector("#loyaltyMemberRank").className = "loyalty-rank loyalty-rank-gold";
+    renderRewardMilestones(7500);
+    receiptForm.hidden = true;
+    document.querySelector(".loyalty-used-receipts").hidden = true;
+    const previewNote = document.createElement("p");
+    previewNote.className = "loyalty-rewards-preview-note";
+    previewNote.textContent = "Bản xem thử · Dữ liệu minh họa, không lưu";
+    document.querySelector(".loyalty-rewards")?.prepend(previewNote);
+    document.querySelector(".loyalty-rewards")?.scrollIntoView({ block: "center" });
+  }
+
+  document.querySelector(".loyalty-rewards-grid")?.addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-claim-reward]");
+    if (!button || button.disabled || rewardPreviewMode) return;
+    const phoneNode = document.querySelector("#loyaltyMemberPhone");
+    const phone = normalizeLoyaltyPhone(phoneNode.dataset.fullPhone || "");
+    const notice = document.querySelector("#loyaltyRewardNotice");
+    button.disabled = true;
+    notice.hidden = true;
+    try {
+      const data = await requestSharedData("/api/shared-data", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "claim-loyalty-reward", phone, rewardCode: button.dataset.claimReward }),
+      });
+      rewardClaims = [data.claim, ...rewardClaims.filter((item) => item.reward_code !== data.claim.reward_code)];
+      renderRewardMilestones(getLoyaltyPointsLast12Months(phone));
+      notice.hidden = true;
+      showLoyaltyRewardSuccessToast();
+    } catch (error) {
+      notice.textContent = error.message;
+      notice.dataset.type = "error";
+      notice.hidden = false;
+      button.disabled = false;
+    }
+  });
 
   const renderLoyaltyReceipts = (phone) => {
     const body = document.querySelector("#loyaltyUsedReceiptsBody");
@@ -5170,6 +5251,7 @@ function bindLoyaltyForms() {
       const member = normalizeCloudMember(data.member);
       loyaltyMembers = member ? [member] : [];
       loyaltyReceipts = (data.receipts || []).map(normalizeCloudReceipt);
+      rewardClaims = data.rewardClaims || [];
       notice.hidden = true;
       if (member) {
         showMember(member);
@@ -5211,6 +5293,7 @@ function bindLoyaltyForms() {
       });
       loyaltyMembers = [normalizeCloudMember(data.member)];
       loyaltyReceipts = [];
+      rewardClaims = [];
       showMember(loyaltyMembers[0]);
       lookupPhone.value = phone;
       notice.textContent = "Đã tạo thành viên trên cloud.";

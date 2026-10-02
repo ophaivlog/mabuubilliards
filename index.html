@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>Ma Buu Tournament Viewer</title>
-    <link rel="stylesheet" href="styles.css?v=20261002-19" />
+    <link rel="stylesheet" href="styles.css?v=20261002-23" />
   </head>
   <body data-mode="viewer">
     <div class="loyalty-success-toast" id="loyaltySuccessToast" role="status" aria-live="polite" hidden>
@@ -340,8 +340,63 @@
 
               <details class="loyalty-benefits">
                 <summary>🎁 Quyền lợi của bạn <span>Xem chi tiết ＋</span></summary>
-                <p>Hạng và huy hiệu của bạn được cập nhật theo điểm tích lũy trong 12 tháng. Vui lòng liên hệ Ma Buu để xem ưu đãi đang áp dụng.</p>
+                <div class="loyalty-monthly-perk" aria-label="Đạt 500 điểm trong tháng: tham gia giải hội viên miễn phí, miễn lệ phí và miễn tiền giờ">
+                  <div class="loyalty-perk-trophy" aria-hidden="true">🏆</div>
+                  <div class="loyalty-perk-content">
+                    <p class="loyalty-perk-headline">MỖI THÁNG ĐỦ <strong>500 ĐIỂM</strong><br />THAM GIA GIẢI HỘI VIÊN MIỄN PHÍ</p>
+                    <div class="loyalty-perk-extras">
+                      <span><b aria-hidden="true">🎟</b> MIỄN LỆ PHÍ</span>
+                      <i aria-hidden="true"></i>
+                      <span><b aria-hidden="true">◷</b> MIỄN TIỀN GIỜ</span>
+                    </div>
+                  </div>
+                </div>
               </details>
+
+              <section class="loyalty-rewards" aria-labelledby="loyaltyRewardsTitle">
+                <h3 id="loyaltyRewardsTitle">CỘT MỐC NHẬN QUÀ</h3>
+                <div class="loyalty-rewards-grid">
+                  <article class="loyalty-reward-card" data-reward-code="glove_1500" data-reward-points="1500">
+                    <span class="loyalty-reward-points"><strong>1.500</strong><span>ĐIỂM</span></span>
+                    <span class="loyalty-reward-icon" aria-hidden="true">🧤</span>
+                    <strong class="loyalty-reward-name">BAO TAY CÁ NHÂN</strong>
+                    <div class="loyalty-reward-state" aria-live="polite"></div>
+                  </article>
+                  <article class="loyalty-reward-card" data-reward-code="chalk_3000" data-reward-points="3000">
+                    <span class="loyalty-reward-points"><strong>3.000</strong><span>ĐIỂM</span></span>
+                    <span class="loyalty-reward-icon loyalty-reward-chalk" aria-hidden="true">V10</span>
+                    <strong class="loyalty-reward-name">LƠ TAOM V10 CHÍNH HÃNG</strong>
+                    <div class="loyalty-reward-state" aria-live="polite"></div>
+                  </article>
+                  <article class="loyalty-reward-card" data-reward-code="shirt_5000" data-reward-points="5000">
+                    <span class="loyalty-reward-points"><strong>5.000</strong><span>ĐIỂM</span></span>
+                    <span class="loyalty-reward-icon" aria-hidden="true">👕</span>
+                    <strong class="loyalty-reward-name">ÁO CLB MA BUU</strong>
+                    <div class="loyalty-reward-state" aria-live="polite"></div>
+                  </article>
+                  <article class="loyalty-reward-card" data-reward-code="cash_7000" data-reward-points="7000">
+                    <span class="loyalty-reward-points"><strong>7.000</strong><span>ĐIỂM</span></span>
+                    <span class="loyalty-reward-icon" aria-hidden="true">💵</span>
+                    <strong class="loyalty-reward-name">THƯỞNG 500.000Đ TIỀN MẶT</strong>
+                    <div class="loyalty-reward-state" aria-live="polite"></div>
+                  </article>
+                  <article class="loyalty-reward-card loyalty-reward-card-wide" data-reward-code="cue_15000" data-reward-points="15000">
+                    <span class="loyalty-reward-points"><strong>15.000</strong><span>ĐIỂM</span></span>
+                    <svg class="loyalty-reward-cue" aria-hidden="true" viewBox="0 0 220 44" fill="none">
+                      <defs><linearGradient id="loyaltyCueWood" x1="12" y1="32" x2="205" y2="9" gradientUnits="userSpaceOnUse"><stop stop-color="#f04a78"/><stop offset=".18" stop-color="#f6c45e"/><stop offset=".65" stop-color="#bd8140"/><stop offset="1" stop-color="#f6d58b"/></linearGradient></defs>
+                      <path d="M12 34 201 8" stroke="#09070b" stroke-width="12" stroke-linecap="round"/>
+                      <path d="M12 34 201 8" stroke="url(#loyaltyCueWood)" stroke-width="7" stroke-linecap="round"/>
+                      <path d="m12 34 11-1.5M196 8.7l9-1.2" stroke="#f7e5bc" stroke-width="2" stroke-linecap="round"/>
+                      <path d="m36 30.7 1.5 6m7-7.2 1.3 5.8m7-7 1.2 5.7" stroke="#25191b" stroke-width="1.5"/>
+                      <circle cx="102" cy="21.7" r="5.5" fill="#151116" stroke="#f7cf62" stroke-width="2"/>
+                      <circle cx="102" cy="21.7" r="1.6" fill="#f7cf62"/>
+                    </svg>
+                    <strong class="loyalty-reward-name">CƠ CÁ NHÂN</strong>
+                    <div class="loyalty-reward-state" aria-live="polite"></div>
+                  </article>
+                </div>
+                <div id="loyaltyRewardNotice" class="loyalty-notice" role="status" hidden></div>
+              </section>
 
               <form id="loyaltyReceiptForm" class="loyalty-form loyalty-receipt-form">
                 <input id="loyaltyReceipt" class="loyalty-file-input" type="file" accept="image/jpeg,image/png,image/webp" />
@@ -602,6 +657,6 @@
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="supabase-config.js?v=20260524-2"></script>
-    <script src="script.js?v=20261002-10"></script>
+    <script src="script.js?v=20261002-12"></script>
   </body>
 </html>

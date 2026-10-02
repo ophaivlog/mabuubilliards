@@ -93,7 +93,8 @@ module.exports = async function handler(req, res) {
         if (phone.length < 9 || phone.length > 11) return json(res, 400, { ok: false, message: "Số điện thoại không hợp lệ." });
         const members = await request(`loyalty_members?phone=eq.${encodeURIComponent(phone)}&select=phone,name,points,created_at`);
         const receipts = await request(`loyalty_receipts?member_phone=eq.${encodeURIComponent(phone)}&select=invoice_number,member_phone,member_name,points,used_at&order=used_at.desc`);
-        return json(res, 200, { ok: true, member: members?.[0] || null, receipts: receipts || [] });
+        const rewardClaims = await request(`loyalty_reward_claims?member_phone=eq.${encodeURIComponent(phone)}&select=reward_code,claimed_at&order=claimed_at.desc`);
+        return json(res, 200, { ok: true, member: members?.[0] || null, receipts: receipts || [], rewardClaims: rewardClaims || [] });
       }
       if (type === "admin-loyalty") {
         if (!(await requireAdmin(req.headers.authorization))) return json(res, 401, { ok: false, message: "Cần đăng nhập admin để xem dữ liệu thành viên." });
@@ -130,6 +131,17 @@ module.exports = async function handler(req, res) {
         body: JSON.stringify({ p_invoice_number: number, p_member_phone: phone, p_points: points }),
       });
       return json(res, 200, { ok: true, ...rows });
+    }
+
+    if (body.action === "claim-loyalty-reward") {
+      const phone = normalizePhone(body.phone);
+      const rewardCode = String(body.rewardCode || "");
+      if (phone.length < 9 || phone.length > 11) return json(res, 400, { ok: false, message: "Số điện thoại không hợp lệ." });
+      const rows = await request("rpc/claim_loyalty_reward", {
+        method: "POST",
+        body: JSON.stringify({ p_member_phone: phone, p_reward_code: rewardCode }),
+      });
+      return json(res, 200, { ok: true, claim: rows });
     }
 
     if (body.action === "record-spin") {
@@ -169,9 +181,18 @@ module.exports = async function handler(req, res) {
     return json(res, 400, { ok: false, message: "Thao tác không hợp lệ." });
   } catch (error) {
     const status = error.code === "23505" ? 409 : error.statusCode || 500;
-    const message = error.code === "23505"
+    const rawMessage = error.message || "";
+    const message = rawMessage.includes("MILESTONE_NOT_REACHED")
+      ? "Bạn chưa đạt đủ điểm trong 12 tháng để nhận mốc quà này."
+      : rawMessage.includes("REWARD_ALREADY_CLAIMED")
+        ? "Mốc quà này đã được nhận trước đó."
+        : rawMessage.includes("INVALID_REWARD")
+          ? "Mốc quà không hợp lệ."
+          : rawMessage.includes("MEMBER_NOT_FOUND")
+            ? "Không tìm thấy hội viên."
+            : error.code === "23505"
       ? "Số điện thoại đã đăng ký hoặc phiếu này đã được sử dụng."
-      : error.message || "Không xử lý được dữ liệu Supabase.";
+      : rawMessage || "Không xử lý được dữ liệu Supabase.";
     return json(res, status, { ok: false, message });
   }
 };
