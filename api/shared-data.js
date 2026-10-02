@@ -1,4 +1,5 @@
 const DEFAULT_PRIZES = ["Giảm 10%", "Nước miễn phí", "Tặng 1 giờ bàn", "Chúc may mắn", "Giảm 20%", "Áo Ma Buu", "Voucher 50K", "Quay lại"];
+const { getInvoiceAgeDays } = require("./invoice-date");
 
 function json(res, statusCode, body) {
   res.statusCode = statusCode;
@@ -63,6 +64,10 @@ function validateInvoice(invoice) {
   const number = String(invoice?.invoice_number || "").trim();
   if (normalizeText(invoice?.store_name) !== "mabuubilliardsclub") throw Object.assign(new Error("Sai đơn vị quán trên biên lai."), { statusCode: 400 });
   if (!String(invoice?.date || "").trim() || !/^HD\d{6}$/i.test(number)) throw Object.assign(new Error("Thông tin ngày hoặc mã phiếu không hợp lệ."), { statusCode: 400 });
+  const invoiceAgeDays = getInvoiceAgeDays(invoice.date);
+  if (invoiceAgeDays === null) throw Object.assign(new Error("Không đọc được ngày trên hóa đơn."), { statusCode: 400 });
+  if (invoiceAgeDays < 0) throw Object.assign(new Error("Ngày hóa đơn không được nằm trong tương lai."), { statusCode: 400 });
+  if (invoiceAgeDays > 2) throw Object.assign(new Error("Hóa đơn đã quá hạn. Chỉ chấp nhận hóa đơn trong vòng 2 ngày gần nhất."), { statusCode: 400 });
   const item = (Array.isArray(invoice?.items) ? invoice.items : []).find((row) => normalizeText(row?.name) === "bidapool");
   const eligibleAmount = amount(item?.total_price);
   const points = eligibleAmount === null ? null : Math.round(eligibleAmount / 1000);

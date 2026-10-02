@@ -4,13 +4,21 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>Ma Buu Tournament Viewer</title>
-    <link rel="stylesheet" href="styles.css?v=20260930-24" />
+    <link rel="stylesheet" href="styles.css?v=20261002-15" />
   </head>
   <body data-mode="viewer">
+    <div class="loyalty-success-toast" id="loyaltySuccessToast" role="status" aria-live="polite" hidden>
+      <span class="loyalty-success-toast-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m8 12 2.5 2.5L16 9"/></svg>
+      </span>
+      <span class="loyalty-success-toast-message" id="loyaltySuccessToastMessage"></span>
+      <button class="loyalty-success-toast-close" type="button" data-close-loyalty-toast aria-label="Đóng thông báo" title="Đóng thông báo">
+        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m18 6-12 12M6 6l12 12"/></svg>
+      </button>
+    </div>
     <header class="site-header">
       <a class="brand" href="#" aria-label="Ma Buu Billiards">
-        <span class="brand-orbit"></span>
-        <span class="brand-text">Ma<br />Buu<span>BILLIARDS</span></span>
+        <div class="logo">MA <span>BUU</span><small>BILLIARDS CLUB</small></div>
       </a>
 
       <nav class="main-nav" role="tablist" aria-label="Điều hướng chính">
@@ -276,49 +284,77 @@
       </section>
 
       <section class="panel" id="points" hidden>
-        <div class="data-section wide-section">
-          <div class="section-heading">
-            <div>
-              <p>THÀNH VIÊN</p>
-              <h2>Tích điểm</h2>
-            </div>
+        <div class="data-section wide-section loyalty-page">
+          <div class="loyalty-intro">
+            <h2>HỘI VIÊN <span>MA BUU</span></h2>
+            <p>Chơi bida <i></i> Tích điểm <i></i> Nhận quà</p>
           </div>
+
           <div class="loyalty-panel">
-            <form id="loyaltyLookupForm" class="loyalty-form">
-              <label for="loyaltyLookupPhone">Nhập số điện thoại</label>
+            <form id="loyaltyLookupForm" class="loyalty-form loyalty-lookup-form">
+              <label for="loyaltyLookupPhone">Số điện thoại hội viên</label>
               <div class="loyalty-form-row">
-                <input id="loyaltyLookupPhone" type="tel" inputmode="numeric" autocomplete="tel" placeholder="Số điện thoại" required />
-                <button class="primary-action" type="submit">Kiểm tra</button>
+                <input id="loyaltyLookupPhone" type="tel" inputmode="numeric" autocomplete="tel" placeholder="Nhập số điện thoại" required />
+                <button class="primary-action" type="submit">Xem điểm</button>
               </div>
             </form>
             <div id="loyaltyNotice" class="loyalty-notice" role="status" hidden></div>
 
-            <form id="loyaltyRegistrationForm" class="loyalty-form" hidden>
-              <h3>Thêm thành viên mới</h3>
+            <form id="loyaltyRegistrationForm" class="loyalty-form loyalty-registration" hidden>
+              <h3>Đăng ký hội viên</h3>
               <label for="loyaltyNewPhone">Số điện thoại</label>
               <input id="loyaltyNewPhone" type="tel" inputmode="numeric" autocomplete="tel" required />
               <label for="loyaltyNewName">Họ và tên</label>
               <input id="loyaltyNewName" type="text" autocomplete="name" required />
-              <button class="primary-action" type="submit">Thêm vào danh sách</button>
+              <button class="primary-action" type="submit">Tạo hội viên</button>
             </form>
 
             <section id="loyaltyMemberCard" class="loyalty-member" hidden aria-live="polite">
-              <div class="loyalty-member-details">
-                <div><small>Họ và tên</small><strong id="loyaltyMemberName"></strong></div>
-                <div><small>Số điện thoại</small><strong id="loyaltyMemberPhone"></strong></div>
-                <div><small>Điểm tích lũy</small><strong id="loyaltyMemberPoints">0</strong></div>
-                <div><small>Điểm trong 12 tháng</small><strong id="loyaltyMemberAnnualPoints">0</strong></div>
-                <div><small>Chi tiêu tương ứng</small><strong id="loyaltyMemberAnnualSpend">0 ₫</strong></div>
-                <div><small>Hạng thành viên</small><strong><span id="loyaltyMemberRank" class="loyalty-rank loyalty-rank-bronze"><span id="loyaltyMemberMedal" class="loyalty-rank-medal" aria-hidden="true">🥉</span><span id="loyaltyMemberRankName">Đồng</span></span></strong></div>
+              <div class="loyalty-member-scorecard">
+                <div class="loyalty-member-top">
+                  <div>
+                    <p class="loyalty-greeting">Xin chào, <strong id="loyaltyMemberName"></strong></p>
+                    <p class="loyalty-phone" id="loyaltyMemberPhone"></p>
+                  </div>
+                  <span id="loyaltyMemberRank" class="loyalty-rank loyalty-rank-bronze">
+                    <span id="loyaltyMemberMedal" class="loyalty-rank-medal" aria-hidden="true">🥉</span>
+                    <span id="loyaltyMemberRankName">Đồng</span>
+                  </span>
+                </div>
+                <div class="loyalty-score">
+                  <strong id="loyaltyMemberPoints">0</strong>
+                  <span>Điểm tích lũy</span>
+                </div>
               </div>
-              <form id="loyaltyReceiptForm" class="loyalty-form">
-                <label for="loyaltyReceipt">Tải biên lai chuyển khoản</label>
+
+              <div class="loyalty-stat-grid">
+                <article class="loyalty-stat">
+                  <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V9m5 10V5m5 14v-7m5 7V3"/></svg>
+                  <div><small>Điểm trong 12 tháng</small><strong id="loyaltyMemberAnnualPoints">0</strong></div>
+                </article>
+                <article class="loyalty-stat">
+                  <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v5c0 1.7 3.6 3 8 3s8-1.3 8-3V5m-16 5v5c0 1.7 3.6 3 8 3s8-1.3 8-3v-5m-16 5v4c0 1.7 3.6 3 8 3s8-1.3 8-3v-4"/></svg>
+                  <div><small>Chi tiêu tương ứng</small><strong id="loyaltyMemberAnnualSpend">0 ₫</strong></div>
+                </article>
+              </div>
+
+              <details class="loyalty-benefits">
+                <summary>
+                  <span class="loyalty-benefit-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12v10H4V12m-2-5h20v5H2zm10 15V7m0 0H7.5a2.5 2.5 0 1 1 2.4-3.2C10.7 5.3 12 7 12 7Zm0 0h4.5a2.5 2.5 0 1 0-2.4-3.2C13.3 5.3 12 7 12 7Z"/></svg></span>
+                  <span class="loyalty-benefit-copy"><strong>Quyền lợi của bạn</strong><small>Ưu đãi dành riêng theo hạng thành viên</small></span>
+                  <span class="loyalty-benefit-action">Xem quyền lợi <b aria-hidden="true">→</b></span>
+                </summary>
+                <p>Hạng và huy hiệu của bạn được cập nhật theo điểm tích lũy trong 12 tháng. Vui lòng liên hệ Ma Buu để xem ưu đãi đang áp dụng.</p>
+              </details>
+
+              <form id="loyaltyReceiptForm" class="loyalty-form loyalty-receipt-form">
                 <input id="loyaltyReceipt" class="loyalty-file-input" type="file" accept="image/jpeg,image/png,image/webp" />
                 <label class="loyalty-file-button" for="loyaltyReceipt">
-                  <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3m0 0L7 8m5-5 5 5"/><path d="M5 14v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/></svg>
-                  <span>Tải biên lai</span>
+                  <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+                  <span>Gửi biên lai tích điểm</span>
                 </label>
                 <span id="loyaltyReceiptFileName" class="loyalty-file-name">Chưa chọn ảnh</span>
+                <p class="loyalty-upload-hint">Tải ảnh hóa đơn có ngày in trong vòng 2 ngày gần nhất.</p>
               </form>
               <div id="loyaltyReceiptPreview" class="loyalty-receipt-preview" hidden>
                 <img alt="Ảnh biên lai chuyển khoản đã chọn" />
@@ -331,17 +367,14 @@
                 <div id="loyaltyInvoiceValidation" class="loyalty-notice" role="status" hidden></div>
                 <button id="confirmLoyaltyPoints" class="primary-action" type="button" disabled hidden>Tích điểm</button>
               </section>
+
               <section class="loyalty-used-receipts">
-                <h3>Danh sách biên lai đã dùng</h3>
-                <div class="table-wrap">
-                  <table class="data-table">
-                    <thead><tr><th>Số phiếu</th><th>BIDA POOL</th><th>Thành viên</th></tr></thead>
-                    <tbody id="loyaltyUsedReceiptsBody"></tbody>
-                  </table>
-                </div>
+                <div class="loyalty-history-heading"><h3>Lịch sử tích điểm</h3><button id="loyaltyHistoryToggle" class="loyalty-history-toggle" type="button" aria-expanded="false" hidden>Xem tất cả <span aria-hidden="true">→</span></button></div>
+                <div id="loyaltyUsedReceiptsBody" class="loyalty-history-list"></div>
               </section>
             </section>
           </div>
+          <footer class="loyalty-footer">MA BUU BILLIARDS CLUB<br />Hội viên Ma Buu • Chơi vui, tích điểm mỗi ngày</footer>
         </div>
       </section>
 
@@ -574,6 +607,6 @@
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="supabase-config.js?v=20260524-2"></script>
-    <script src="script.js?v=20260930-39"></script>
+    <script src="script.js?v=20261002-6"></script>
   </body>
 </html>

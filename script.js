@@ -5035,6 +5035,20 @@ function normalizeLoyaltyPhone(value) {
   return String(value || "").replace(/\D/g, "");
 }
 
+let loyaltySuccessToastTimer = 0;
+
+function showLoyaltySuccessToast(invoiceNumber) {
+  const toast = document.querySelector("#loyaltySuccessToast");
+  const message = document.querySelector("#loyaltySuccessToastMessage");
+  if (!toast || !message) return;
+  message.textContent = `Tích điểm thành công cho đơn hàng ${invoiceNumber}`;
+  toast.hidden = false;
+  window.clearTimeout(loyaltySuccessToastTimer);
+  loyaltySuccessToastTimer = window.setTimeout(() => {
+    toast.hidden = true;
+  }, 6000);
+}
+
 function bindLoyaltyForms() {
   const lookupForm = document.querySelector("#loyaltyLookupForm");
   const lookupPhone = document.querySelector("#loyaltyLookupPhone");
@@ -5046,8 +5060,16 @@ function bindLoyaltyForms() {
   const receiptPreview = document.querySelector("#loyaltyReceiptPreview");
   const invoiceResult = document.querySelector("#loyaltyInvoiceResult");
   const confirmPointsButton = document.querySelector("#confirmLoyaltyPoints");
+  const historyToggle = document.querySelector("#loyaltyHistoryToggle");
   let scanningReceipt = false;
+  let historyExpanded = false;
+  let historyPhone = "";
   if (!lookupForm || !lookupPhone || !registrationForm || !memberCard || !receiptForm || !receiptInput || !receiptPreview) return;
+
+  document.querySelector("[data-close-loyalty-toast]")?.addEventListener("click", () => {
+    document.querySelector("#loyaltySuccessToast").hidden = true;
+    window.clearTimeout(loyaltySuccessToastTimer);
+  });
 
   const hideMember = () => {
     memberCard.hidden = true;
@@ -5064,8 +5086,12 @@ function bindLoyaltyForms() {
   const showMember = (member) => {
     registrationForm.hidden = true;
     memberCard.hidden = false;
+    historyExpanded = false;
     document.querySelector("#loyaltyMemberName").textContent = member.name;
-    document.querySelector("#loyaltyMemberPhone").textContent = member.phone;
+    const phoneNode = document.querySelector("#loyaltyMemberPhone");
+    const phone = normalizeLoyaltyPhone(member.phone);
+    phoneNode.dataset.fullPhone = phone;
+    phoneNode.textContent = phone.length > 7 ? `${phone.slice(0, 4)} ${"*".repeat(phone.length - 7)} ${phone.slice(-3)}` : phone;
     document.querySelector("#loyaltyMemberPoints").textContent = (Number(member.points) || 0).toLocaleString("vi-VN");
     const annualPoints = getLoyaltyPointsLast12Months(member.phone);
     document.querySelector("#loyaltyMemberAnnualPoints").textContent = annualPoints.toLocaleString("vi-VN");
@@ -5081,19 +5107,39 @@ function bindLoyaltyForms() {
   const renderLoyaltyReceipts = (phone) => {
     const body = document.querySelector("#loyaltyUsedReceiptsBody");
     const normalizedPhone = normalizeLoyaltyPhone(phone);
+    historyPhone = normalizedPhone;
     const receipts = loadLoyaltyReceipts().filter(
       (receipt) => normalizeLoyaltyPhone(receipt.memberPhone) === normalizedPhone,
     );
+    const orderedReceipts = [...receipts].reverse();
+    const visibleReceipts = historyExpanded ? orderedReceipts : orderedReceipts.slice(0, 3);
+    if (historyToggle) {
+      historyToggle.hidden = receipts.length <= 3;
+      historyToggle.setAttribute("aria-expanded", String(historyExpanded));
+      historyToggle.innerHTML = historyExpanded ? 'Thu gọn <span aria-hidden="true">↑</span>' : 'Xem tất cả <span aria-hidden="true">→</span>';
+    }
     body.innerHTML = receipts.length
-      ? [...receipts].reverse().map((receipt) => `
-          <tr>
-            <td>${escapeHtml(receipt.invoiceNumber)}</td>
-            <td>${Number(receipt.points || 0).toLocaleString("vi-VN")} điểm</td>
-            <td>${escapeHtml(receipt.memberName || "-")}</td>
-          </tr>
-        `).join("")
-      : `<tr><td colspan="3">Chưa có biên lai nào được dùng.</td></tr>`;
+      ? visibleReceipts.map((receipt) => {
+          const usedAt = new Date(receipt.usedAt);
+          const timestamp = Number.isNaN(usedAt.getTime()) ? "Đã ghi nhận" : usedAt.toLocaleString("vi-VN", {
+            day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
+          });
+          const points = Number(receipt.points || 0).toLocaleString("vi-VN");
+          return `
+            <article class="loyalty-history-row">
+              <span class="loyalty-history-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8m-8 4h8"/></svg></span>
+              <span class="loyalty-history-info"><small>${escapeHtml(timestamp)}</small><strong>Hóa đơn #${escapeHtml(receipt.invoiceNumber || "-")}</strong></span>
+              <span class="loyalty-history-result"><small>Đã cộng điểm</small><strong>+ ${points}</strong></span>
+            </article>
+          `;
+        }).join("")
+      : `<p class="loyalty-history-empty">Chưa có lịch sử tích điểm.</p>`;
   };
+
+  historyToggle?.addEventListener("click", () => {
+    historyExpanded = !historyExpanded;
+    renderLoyaltyReceipts(historyPhone);
+  });
 
   lookupForm.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -5265,7 +5311,14 @@ function bindLoyaltyForms() {
     }
 
     const invoiceNumber = String(invoice.invoice_number || "").trim();
-    if (!String(invoice.date || "").trim()) missing.push("ngày");
+    const invoiceDateText = String(invoice.date || "").trim();
+    if (!invoiceDateText) missing.push("ngày");
+    else {
+      const invoiceAgeDays = getLoyaltyInvoiceAgeDays(invoiceDateText);
+      if (invoiceAgeDays === null) problems.push("Không đọc được ngày trên hóa đơn.");
+      else if (invoiceAgeDays < 0) problems.push("Ngày hóa đơn không được nằm trong tương lai.");
+      else if (invoiceAgeDays > 2) problems.push("Hóa đơn đã quá hạn. Chỉ chấp nhận hóa đơn trong vòng 2 ngày gần nhất.");
+    }
     if (!invoiceNumber) missing.push("số phiếu");
     else if (!/^HD\d{6}$/i.test(invoiceNumber)) missing.push("mã phiếu định dạng HD + 6 số");
     else if (loadLoyaltyReceipts().some((receipt) => normalizeLoyaltyText(receipt.invoiceNumber) === normalizeLoyaltyText(invoiceNumber))) {
@@ -5292,6 +5345,33 @@ function bindLoyaltyForms() {
     return { valid: problems.length === 0, problems, invoiceNumber, points };
   }
 
+  function getLoyaltyInvoiceAgeDays(value) {
+    const text = String(value || "").trim();
+    let match = text.match(/^(\d{4})\s*[-/.]\s*(\d{1,2})\s*[-/.]\s*(\d{1,2})/);
+    let year;
+    let month;
+    let day;
+    if (match) {
+      [, year, month, day] = match;
+    } else {
+      match = text.match(/^(\d{1,2})\s*[/.\-]\s*(\d{1,2})(?:\s*[/.\-]\s*|\s+)(\d{4})/);
+      if (!match) return null;
+      [, day, month, year] = match;
+    }
+
+    const invoiceDay = Date.UTC(Number(year), Number(month) - 1, Number(day));
+    const parsed = new Date(invoiceDay);
+    if (
+      parsed.getUTCFullYear() !== Number(year) ||
+      parsed.getUTCMonth() !== Number(month) - 1 ||
+      parsed.getUTCDate() !== Number(day)
+    ) return null;
+
+    const businessNow = new Date(Date.now() + 7 * 60 * 60 * 1000);
+    const today = Date.UTC(businessNow.getUTCFullYear(), businessNow.getUTCMonth(), businessNow.getUTCDate());
+    return Math.floor((today - invoiceDay) / (24 * 60 * 60 * 1000));
+  }
+
   function normalizeLoyaltyText(value) {
     return String(value || "")
       .normalize("NFD")
@@ -5314,7 +5394,7 @@ function bindLoyaltyForms() {
     const validationNotice = document.querySelector("#loyaltyInvoiceValidation");
     const detailRows = [
       ["Đơn vị", invoice.store_name],
-      ["Ngày", invoice.date],
+      ["Ngày in trên hóa đơn", invoice.date],
       ["Mã giao dịch / hóa đơn", invoice.invoice_number],
       ["Tổng tiền", invoice.total_amount],
     ];
@@ -5345,7 +5425,8 @@ function bindLoyaltyForms() {
 
   confirmPointsButton.addEventListener("click", async () => {
     if (confirmPointsButton.disabled) return;
-    const phone = normalizeLoyaltyPhone(document.querySelector("#loyaltyMemberPhone").textContent);
+    const memberPhone = document.querySelector("#loyaltyMemberPhone");
+    const phone = normalizeLoyaltyPhone(memberPhone.dataset.fullPhone || memberPhone.textContent);
     const member = loadLoyaltyMembers().find((entry) => normalizeLoyaltyPhone(entry.phone) === phone);
     const invoice = window.loyaltyScannedInvoice;
     if (!member || !invoice) return;
@@ -5371,8 +5452,8 @@ function bindLoyaltyForms() {
       loyaltyMembers = [updatedMember];
       loyaltyReceipts = [receipt, ...loyaltyReceipts.filter((item) => item.invoiceNumber !== receipt.invoiceNumber)];
       showMember(updatedMember);
-      validationNotice.textContent = `Đã cộng ${validation.points.toLocaleString("vi-VN")} điểm cho ${updatedMember.name} trên cloud.`;
-      validationNotice.dataset.type = "ok";
+      validationNotice.hidden = true;
+      showLoyaltySuccessToast(receipt.invoiceNumber);
       renderLoyaltyReceipts(updatedMember.phone);
     } catch (error) {
       validationNotice.textContent = error.message;

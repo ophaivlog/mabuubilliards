@@ -41,7 +41,7 @@ module.exports = async function handler(req, res) {
             role: "user",
             parts: [
               {
-                text: "Đọc ảnh hóa đơn hoặc biên lai chuyển khoản. Trích xuất thông tin nhìn thấy được thành JSON chuẩn với các trường store_name, date, invoice_number, items (mỗi mục gồm name, quantity, unit_price, total_price), total_amount. Với biên lai chuyển khoản, dùng tên ngân hàng hoặc người nhận cho store_name, mã giao dịch cho invoice_number, và số tiền giao dịch cho total_amount. Không đoán thông tin không nhìn rõ; dùng chuỗi rỗng hoặc mảng rỗng khi không có dữ liệu.",
+                text: "Đọc ảnh hóa đơn hoặc biên lai chuyển khoản. Trích xuất thông tin nhìn thấy được thành JSON chuẩn với các trường store_name, date, invoice_number, items (mỗi mục gồm name, quantity, unit_price, total_price), total_amount. Trường date phải là ngày/tháng/năm được in trên hóa đơn, không dùng ngày chụp hoặc ngày tải ảnh; chuẩn hóa thành YYYY-MM-DD kể cả khi ngày in có khoảng trắng giữa các phần (ví dụ 21 / 09 2026 thành 2026-09-21). Với biên lai chuyển khoản, dùng tên ngân hàng hoặc người nhận cho store_name, mã giao dịch cho invoice_number, và số tiền giao dịch cho total_amount. Không đoán thông tin không nhìn rõ; dùng chuỗi rỗng hoặc mảng rỗng khi không có dữ liệu.",
               },
               { inlineData: { mimeType, data: imageBytes.toString("base64") } },
             ],
