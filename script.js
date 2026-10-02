@@ -5019,6 +5019,7 @@ function normalizeCloudReceipt(receipt) {
     memberPhone: receipt.member_phone || receipt.memberPhone || "",
     memberName: receipt.member_name || receipt.memberName || "",
     usedAt: receipt.used_at || receipt.usedAt || "",
+    status: receipt.status || "approved",
   };
 }
 
@@ -5092,8 +5093,8 @@ function bindLoyaltyForms() {
     const phone = normalizeLoyaltyPhone(member.phone);
     phoneNode.dataset.fullPhone = phone;
     phoneNode.textContent = phone.length > 7 ? `${phone.slice(0, 4)} ${"*".repeat(phone.length - 7)} ${phone.slice(-3)}` : phone;
-    document.querySelector("#loyaltyMemberPoints").textContent = (Number(member.points) || 0).toLocaleString("vi-VN");
     const annualPoints = getLoyaltyPointsLast12Months(member.phone);
+    document.querySelector("#loyaltyMemberPoints").textContent = annualPoints.toLocaleString("vi-VN");
     document.querySelector("#loyaltyMemberAnnualPoints").textContent = annualPoints.toLocaleString("vi-VN");
     document.querySelector("#loyaltyMemberAnnualSpend").textContent = `${(annualPoints * 1000).toLocaleString("vi-VN")} ₫`;
     const rank = getLoyaltyRank(annualPoints);
@@ -5121,15 +5122,15 @@ function bindLoyaltyForms() {
     body.innerHTML = receipts.length
       ? visibleReceipts.map((receipt) => {
           const usedAt = new Date(receipt.usedAt);
-          const timestamp = Number.isNaN(usedAt.getTime()) ? "Đã ghi nhận" : usedAt.toLocaleString("vi-VN", {
-            day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
-          });
+          const timestamp = Number.isNaN(usedAt.getTime()) ? "Đã ghi nhận" : `${usedAt.toLocaleDateString("vi-VN", {
+            day: "2-digit", month: "2-digit", year: "numeric",
+          })} · ${usedAt.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}`;
           const points = Number(receipt.points || 0).toLocaleString("vi-VN");
+          const isPending = ["pending", "pending_review", "review"].includes(String(receipt.status || "").toLowerCase());
           return `
             <article class="loyalty-history-row">
-              <span class="loyalty-history-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8m-8 4h8"/></svg></span>
-              <span class="loyalty-history-info"><small>${escapeHtml(timestamp)}</small><strong>Hóa đơn #${escapeHtml(receipt.invoiceNumber || "-")}</strong></span>
-              <span class="loyalty-history-result"><small>Đã cộng điểm</small><strong>+ ${points}</strong></span>
+              <div class="loyalty-history-info"><small>${escapeHtml(timestamp)}</small><p>Biên lai #${escapeHtml(receipt.invoiceNumber || "-")}</p></div>
+              <div class="loyalty-history-result"><small class="${isPending ? "pending" : ""}">${isPending ? "Chờ duyệt" : "Đã cộng điểm"}</small><strong>${isPending ? "Chưa cộng điểm" : `+ ${points} điểm`}</strong></div>
             </article>
           `;
         }).join("")

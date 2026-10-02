@@ -82,6 +82,28 @@ body {
     var(--bg);
 }
 
+.admin-login-wordmark {
+  margin-bottom: 4px;
+  color: var(--text);
+  font-size: 32px;
+  font-weight: 950;
+  line-height: 1;
+  text-align: center;
+}
+
+.admin-login-wordmark span {
+  color: var(--pink);
+}
+
+.admin-login-wordmark small {
+  display: block;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 3px;
+}
+
 .login-box {
   width: min(420px, 100%);
   display: grid;
@@ -477,6 +499,10 @@ html[data-theme="light"] .theme-toggle [data-theme-moon] { display: inline; }
   z-index: 20;
   top: 16px;
   right: 16px;
+}
+
+[data-auth="unlocked"] .theme-toggle-login {
+  display: none;
 }
 
 .primary-action,
@@ -4753,6 +4779,14 @@ html[data-theme="light"] [data-mode="viewer"] .loyalty-panel {
   box-shadow: 0 12px 30px rgba(168, 36, 121, 0.08);
 }
 
+html[data-theme="dark"] [data-mode="viewer"] .loyalty-panel {
+  padding: 20px;
+  border: 1px solid rgba(240, 91, 191, 0.3);
+  border-radius: 16px;
+  background: #19171b;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
+}
+
 html[data-theme="light"] [data-mode="viewer"] #ranking .data-section,
 html[data-theme="light"] [data-mode="viewer"] #tournamentRanking .data-section,
 html[data-theme="light"] [data-mode="viewer"] #minigame .mini-game-layout,
@@ -4848,17 +4882,22 @@ html[data-theme="light"] .ad-banner-preview {
 }
 
 .loyalty-lookup-form .primary-action,
+.loyalty-lookup-form .pink,
 .loyalty-registration .primary-action,
 #confirmLoyaltyPoints {
   min-height: 48px;
   border-color: var(--pink);
-  border-radius: 8px;
+  border-radius: 12px;
   background: var(--pink);
   color: #fff;
   font-weight: 800;
+  padding: 0 18px;
+  white-space: nowrap;
+  box-shadow: 0 5px 14px rgba(214, 59, 158, 0.12);
 }
 
 .loyalty-lookup-form .primary-action:hover,
+.loyalty-lookup-form .pink:hover,
 .loyalty-registration .primary-action:hover,
 #confirmLoyaltyPoints:hover:not(:disabled) {
   filter: brightness(1.06);
@@ -5110,6 +5149,10 @@ html[data-theme="light"] .ad-banner-preview {
 
 .loyalty-used-receipts {
   margin-top: 2px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
 }
 
 .loyalty-history-heading {
@@ -5121,15 +5164,18 @@ html[data-theme="light"] .ad-banner-preview {
 }
 
 .loyalty-history-heading h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin: 0;
   color: var(--text);
   font-size: 16px;
 }
 
-.loyalty-history-heading span {
+.loyalty-history-title-icon {
   color: var(--pink);
-  font-size: 11px;
-  font-weight: 750;
+  font-size: 18px;
+  line-height: 1;
 }
 
 .loyalty-history-toggle {
@@ -5159,26 +5205,11 @@ html[data-theme="light"] .ad-banner-preview {
 .loyalty-history-row {
   min-width: 0;
   display: grid;
-  grid-template-columns: 30px minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 9px;
-  padding: 11px 0;
+  gap: 12px;
+  padding: 14px 0;
   border-bottom: 1px solid var(--line);
-}
-
-.loyalty-history-icon {
-  width: 30px;
-  height: 30px;
-  display: grid;
-  place-items: center;
-  border-radius: 7px;
-  background: var(--pink-soft);
-  color: var(--pink);
-}
-
-.loyalty-history-icon svg {
-  width: 17px;
-  height: 17px;
 }
 
 .loyalty-history-info,
@@ -5193,9 +5224,10 @@ html[data-theme="light"] .ad-banner-preview {
   font-size: 10px;
 }
 
-.loyalty-history-info strong {
+.loyalty-history-info p {
+  margin: 0;
   color: var(--text);
-  font-size: 12px;
+  font-size: 13px;
   overflow-wrap: anywhere;
 }
 
@@ -5208,14 +5240,19 @@ html[data-theme="light"] .ad-banner-preview {
   border-radius: 999px;
   background: rgba(33, 169, 102, 0.12);
   color: #218653;
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 750;
   white-space: nowrap;
 }
 
+.loyalty-history-result small.pending {
+  background: rgba(240, 176, 37, 0.16);
+  color: #865a0d;
+}
+
 .loyalty-history-result strong {
   color: var(--text);
-  font-size: 12px;
+  font-size: 13px;
   white-space: nowrap;
 }
 
@@ -5265,6 +5302,46 @@ html[data-theme="light"] .ad-banner-preview {
   }
 }
 
+html[data-theme="light"] body[data-mode="admin"] {
+  background: radial-gradient(ellipse at top right, #ffe1ef, transparent 55%), #fff7fb;
+}
+
+html[data-theme="light"] body[data-mode="admin"] .site-header {
+  border-color: var(--line);
+  background: rgb(255 255 255 / 96%);
+}
+
+html[data-theme="light"] body[data-mode="admin"] .admin-login {
+  background: radial-gradient(ellipse at top right, #ffe1ef, transparent 55%), #fff7fb;
+}
+
+html[data-theme="light"] body[data-mode="admin"] .panel {
+  background: transparent;
+}
+
+html[data-theme="light"] body[data-mode="admin"] .admin-home-tournaments,
+html[data-theme="light"] body[data-mode="admin"] .data-section,
+html[data-theme="light"] body[data-mode="admin"] .form-section {
+  border-color: rgba(212, 59, 158, 0.24);
+  border-radius: 16px;
+  background: #fff2f9;
+  box-shadow: 0 12px 30px rgba(168, 36, 121, 0.08);
+}
+
+html[data-theme="light"] body[data-mode="admin"] .admin-tournament-card {
+  border-color: rgba(212, 59, 158, 0.2);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--text);
+}
+
+html[data-theme="light"] body[data-mode="admin"] .admin-login .login-box {
+  border-color: rgba(212, 59, 158, 0.24);
+  border-radius: 16px;
+  background: #fff2f9;
+  box-shadow: 0 16px 40px rgba(168, 36, 121, 0.1);
+}
+
 .loyalty-page {
   width: min(520px, calc(100% - 32px));
 }
@@ -5301,6 +5378,7 @@ html[data-theme="light"] .ad-banner-preview {
 }
 
 .loyalty-lookup-form .primary-action,
+.loyalty-lookup-form .pink,
 .loyalty-registration .primary-action,
 #confirmLoyaltyPoints,
 .loyalty-receipt-form .loyalty-file-button {
@@ -5402,34 +5480,31 @@ html[data-theme="light"] .ad-banner-preview {
   font-size: 16px;
 }
 
-.loyalty-history-row {
-  grid-template-columns: 36px minmax(0, 1fr) auto;
-  gap: 10px;
-  padding: 14px 0;
-}
-
-.loyalty-history-icon {
-  width: 36px;
-  height: 36px;
-  border-radius: 9px;
-}
-
-.loyalty-history-icon svg {
-  width: 19px;
-  height: 19px;
-}
-
 .loyalty-history-info small {
   font-size: 11px;
 }
 
-.loyalty-history-info strong,
+.loyalty-history-info p,
 .loyalty-history-result strong {
   font-size: 13px;
 }
 
 .loyalty-history-result small {
   font-size: 10px;
+}
+
+.loyalty-benefits summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.loyalty-benefits summary span {
+  color: var(--pink);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
 }
 
 @media (max-width: 360px) {

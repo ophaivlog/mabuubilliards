@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>Ma Buu Tournament Viewer</title>
-    <link rel="stylesheet" href="styles.css?v=20261002-15" />
+    <link rel="stylesheet" href="styles.css?v=20261002-19" />
   </head>
   <body data-mode="viewer">
     <div class="loyalty-success-toast" id="loyaltySuccessToast" role="status" aria-live="polite" hidden>
@@ -295,7 +295,7 @@
               <label for="loyaltyLookupPhone">Số điện thoại hội viên</label>
               <div class="loyalty-form-row">
                 <input id="loyaltyLookupPhone" type="tel" inputmode="numeric" autocomplete="tel" placeholder="Nhập số điện thoại" required />
-                <button class="primary-action" type="submit">Xem điểm</button>
+                <button class="pink primary-action" type="submit">Xem điểm</button>
               </div>
             </form>
             <div id="loyaltyNotice" class="loyalty-notice" role="status" hidden></div>
@@ -339,19 +339,14 @@
               </div>
 
               <details class="loyalty-benefits">
-                <summary>
-                  <span class="loyalty-benefit-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12v10H4V12m-2-5h20v5H2zm10 15V7m0 0H7.5a2.5 2.5 0 1 1 2.4-3.2C10.7 5.3 12 7 12 7Zm0 0h4.5a2.5 2.5 0 1 0-2.4-3.2C13.3 5.3 12 7 12 7Z"/></svg></span>
-                  <span class="loyalty-benefit-copy"><strong>Quyền lợi của bạn</strong><small>Ưu đãi dành riêng theo hạng thành viên</small></span>
-                  <span class="loyalty-benefit-action">Xem quyền lợi <b aria-hidden="true">→</b></span>
-                </summary>
+                <summary>🎁 Quyền lợi của bạn <span>Xem chi tiết ＋</span></summary>
                 <p>Hạng và huy hiệu của bạn được cập nhật theo điểm tích lũy trong 12 tháng. Vui lòng liên hệ Ma Buu để xem ưu đãi đang áp dụng.</p>
               </details>
 
               <form id="loyaltyReceiptForm" class="loyalty-form loyalty-receipt-form">
                 <input id="loyaltyReceipt" class="loyalty-file-input" type="file" accept="image/jpeg,image/png,image/webp" />
                 <label class="loyalty-file-button" for="loyaltyReceipt">
-                  <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
-                  <span>Gửi biên lai tích điểm</span>
+                  <span>＋ Chọn ảnh biên lai tích điểm</span>
                 </label>
                 <span id="loyaltyReceiptFileName" class="loyalty-file-name">Chưa chọn ảnh</span>
                 <p class="loyalty-upload-hint">Tải ảnh hóa đơn có ngày in trong vòng 2 ngày gần nhất.</p>
@@ -369,7 +364,7 @@
               </section>
 
               <section class="loyalty-used-receipts">
-                <div class="loyalty-history-heading"><h3>Lịch sử tích điểm</h3><button id="loyaltyHistoryToggle" class="loyalty-history-toggle" type="button" aria-expanded="false" hidden>Xem tất cả <span aria-hidden="true">→</span></button></div>
+                <div class="loyalty-history-heading"><h3><span class="loyalty-history-title-icon" aria-hidden="true">▤</span>Lịch sử tích điểm</h3><button id="loyaltyHistoryToggle" class="loyalty-history-toggle" type="button" aria-expanded="false" hidden>Xem tất cả <span aria-hidden="true">→</span></button></div>
                 <div id="loyaltyUsedReceiptsBody" class="loyalty-history-list"></div>
               </section>
             </section>
@@ -607,6 +602,6 @@
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="supabase-config.js?v=20260524-2"></script>
-    <script src="script.js?v=20261002-6"></script>
+    <script src="script.js?v=20261002-7"></script>
   </body>
 </html>
