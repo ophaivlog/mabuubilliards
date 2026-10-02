@@ -4665,7 +4665,7 @@ html[data-theme="dark"] .loyalty-notice[data-type="error"] {
 }
 
 .admin-member-card-modal {
-  width: min(720px, 100%);
+  width: min(596px, 100%);
   max-height: min(92dvh, 900px);
   overflow-y: auto;
 }
@@ -4754,10 +4754,18 @@ html[data-theme="dark"] .loyalty-notice[data-type="error"] {
   overflow-wrap: anywhere;
 }
 
-.admin-reward-copy .loyalty-reward-stamp {
+.admin-reward-copy .loyalty-reward-claim {
   justify-self: start;
-  min-height: 24px;
-  font-size: 9px;
+  min-height: 29px;
+  padding: 3px 10px;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: normal;
+  white-space: nowrap;
+  opacity: 1;
+  cursor: default;
 }
 
 .admin-reward-eligible {
@@ -4820,7 +4828,7 @@ html[data-theme="dark"] .loyalty-notice[data-type="error"] {
   .admin-member-card-modal {
     max-height: 94dvh;
     gap: 12px;
-    padding: 14px;
+    padding: 8px;
     border-radius: 12px 12px 8px 8px;
   }
 
@@ -6032,4 +6040,113 @@ html[data-theme="light"] body[data-mode="admin"] .admin-login .login-box {
   .loyalty-reward-card-wide {
     grid-template-columns: 62px minmax(0, 1fr) minmax(90px, 32%);
   }
+}
+
+html[data-theme="light"] .loyalty-benefits {
+  border-color: #e6a8ca;
+  background: #fff;
+  box-shadow: 0 4px 14px rgba(150, 44, 99, .08);
+}
+
+html[data-theme="light"] .loyalty-benefits summary {
+  color: #29242a;
+}
+
+html[data-theme="light"] .loyalty-monthly-perk {
+  border-color: #d94b98;
+  background: linear-gradient(125deg, #fff0f7, #fffafd 62%, #ffe5f1);
+  box-shadow: inset 0 0 12px rgba(212, 59, 158, .06), 0 3px 12px rgba(168, 36, 121, .1);
+  color: #29242a;
+}
+
+html[data-theme="light"] .loyalty-perk-trophy {
+  filter: drop-shadow(0 3px 4px rgba(113, 53, 13, .28));
+}
+
+html[data-theme="light"] .loyalty-perk-headline {
+  color: #302630;
+  text-shadow: none;
+}
+
+html[data-theme="light"] .loyalty-perk-headline strong {
+  color: #bd176c;
+  text-shadow: none;
+}
+
+html[data-theme="light"] .loyalty-perk-extras {
+  border-color: #e7a3c8;
+  background: #fff;
+  box-shadow: 0 2px 6px rgba(168, 36, 121, .08);
+}
+
+html[data-theme="light"] .loyalty-perk-extras span {
+  color: #302630;
+}
+
+html[data-theme="light"] .loyalty-perk-extras b {
+  color: #c32679;
+  text-shadow: none;
+}
+
+html[data-theme="light"] .loyalty-perk-extras i {
+  background: #df70ad;
+  box-shadow: none;
+}
+
+html[data-theme="light"] .loyalty-rewards {
+  color: #29242a;
+}
+
+html[data-theme="light"] .loyalty-rewards h3 {
+  color: #bd176c;
+  text-shadow: none;
+}
+
+html[data-theme="light"] .loyalty-rewards h3::before,
+html[data-theme="light"] .loyalty-rewards h3::after {
+  background: linear-gradient(90deg, transparent, #cf4b91 55%, #e8a2c7);
+  box-shadow: none;
+}
+
+html[data-theme="light"] .loyalty-rewards-preview-note {
+  color: #625661;
+}
+
+html[data-theme="light"] .loyalty-reward-card {
+  border-color: #d968a6;
+  background: linear-gradient(135deg, #fff, #fff4fa);
+  box-shadow: inset 0 0 10px rgba(212, 59, 158, .04), 0 3px 10px rgba(168, 36, 121, .1);
+}
+
+html[data-theme="light"] .loyalty-reward-icon {
+  filter: drop-shadow(0 2px 3px rgba(115, 35, 82, .18));
+}
+
+html[data-theme="light"] .loyalty-reward-name {
+  color: #29242a;
+}
+
+html[data-theme="light"] .loyalty-reward-ready {
+  color: #a3165f;
+}
+
+html[data-theme="light"] .loyalty-reward-locked {
+  color: #4f5965;
+}
+
+html[data-theme="light"] .loyalty-reward-claim.is-locked {
+  border-color: #c9cdd3;
+  background: #e6e8eb;
+  color: #414953;
+}
+
+html[data-theme="light"] .loyalty-reward-stamp {
+  border-color: #bd176c;
+  color: #a91460;
+  text-shadow: none;
+  box-shadow: inset 0 0 5px rgba(189, 23, 108, .08), 0 1px 5px rgba(189, 23, 108, .12);
+}
+
+html[data-theme="light"] .loyalty-reward-card.is-claimed {
+  border-color: #c8478a;
 }

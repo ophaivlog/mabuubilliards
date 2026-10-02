@@ -5034,9 +5034,9 @@ function openAdminLoyaltyMemberCard(phone, trigger) {
     const status = claimed
       ? '<span class="loyalty-reward-stamp">ĐÃ NHẬN</span>'
       : reached
-        ? '<span class="admin-reward-eligible">ĐỦ ĐIỂM · CHƯA NHẬN</span>'
-        : `<span class="loyalty-reward-locked">Còn ${(threshold - annualPoints).toLocaleString("vi-VN")} điểm</span>`;
-    return `<article class="admin-reward-card ${claimed ? "is-claimed" : ""}"><span class="admin-reward-icon ${code === "chalk_3000" ? "loyalty-reward-chalk" : ""}" aria-hidden="true">${icon}</span><span class="admin-reward-copy"><strong>${threshold.toLocaleString("vi-VN")} điểm · ${label}</strong>${status}</span></article>`;
+        ? '<span class="admin-reward-eligible">ĐỦ ĐIỂM · CHƯA NHẬN</span><button class="loyalty-reward-claim" type="button" disabled>NHẬN QUÀ</button>'
+        : `<span class="loyalty-reward-locked">Còn ${(threshold - annualPoints).toLocaleString("vi-VN")} điểm</span><button class="loyalty-reward-claim is-locked" type="button" disabled>CHƯA ĐỦ ĐIỂM</button>`;
+    return `<article class="admin-reward-card ${claimed ? "is-claimed" : ""}"><span class="admin-reward-icon ${code === "chalk_3000" ? "loyalty-reward-chalk" : ""}" aria-hidden="true">${icon}</span><div class="admin-reward-copy"><strong>${threshold.toLocaleString("vi-VN")} điểm · ${label}</strong>${status}</div></article>`;
   }).join("");
   const receipts = [...loyaltyReceipts]
     .filter((receipt) => normalizeLoyaltyPhone(receipt.memberPhone) === normalizeLoyaltyPhone(member.phone))
@@ -5058,7 +5058,7 @@ function openAdminLoyaltyMemberCard(phone, trigger) {
         <div class="loyalty-score"><strong>${annualPoints.toLocaleString("vi-VN")}</strong><span>Điểm tích lũy trong 12 tháng</span></div>
       </div>
       <div class="loyalty-stat-grid"><article class="loyalty-stat"><div><small>Điểm trong 12 tháng</small><strong>${annualPoints.toLocaleString("vi-VN")}</strong></div></article><article class="loyalty-stat"><div><small>Chi tiêu tương ứng</small><strong>${(annualPoints * 1000).toLocaleString("vi-VN")} ₫</strong></div></article></div>
-      <details class="loyalty-benefits" open><summary>🎁 Quyền lợi hội viên</summary><div class="loyalty-monthly-perk"><div class="loyalty-perk-trophy" aria-hidden="true">🏆</div><div class="loyalty-perk-content"><p class="loyalty-perk-headline">MỖI THÁNG ĐỦ <strong>500 ĐIỂM</strong><br>THAM GIA GIẢI HỘI VIÊN MIỄN PHÍ</p><div class="loyalty-perk-extras"><span><b aria-hidden="true">🎟</b> MIỄN LỆ PHÍ</span><i aria-hidden="true"></i><span><b aria-hidden="true">◷</b> MIỄN TIỀN GIỜ</span></div></div></div></details>
+      <details class="loyalty-benefits" open><summary>🎁 Quyền lợi của bạn <span>Xem chi tiết ＋</span></summary><div class="loyalty-monthly-perk"><div class="loyalty-perk-trophy" aria-hidden="true">🏆</div><div class="loyalty-perk-content"><p class="loyalty-perk-headline">MỖI THÁNG ĐỦ <strong>500 ĐIỂM</strong><br>THAM GIA GIẢI HỘI VIÊN MIỄN PHÍ</p><div class="loyalty-perk-extras"><span><b aria-hidden="true">🎟</b> MIỄN LỆ PHÍ</span><i aria-hidden="true"></i><span><b aria-hidden="true">◷</b> MIỄN TIỀN GIỜ</span></div></div></div></details>
       <section class="admin-member-rewards"><h3>CỘT MỐC NHẬN QUÀ</h3><div class="admin-member-rewards-grid">${rewardCards}</div></section>
       <section class="admin-member-receipts"><h3>Lịch sử tích điểm gần đây</h3>${receiptRows}</section>
     </section>`;
