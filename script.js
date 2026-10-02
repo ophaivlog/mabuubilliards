@@ -4976,7 +4976,13 @@ function renderAdminLoyalty() {
       }).join("")
     : `<tr><td colspan="6">${members.length ? "Không tìm thấy thành viên phù hợp." : "Chưa có thành viên."}</td></tr>`;
 
-  const receipts = [...loadLoyaltyReceipts()].reverse();
+  const receipts = [...loadLoyaltyReceipts()].sort((first, second) => {
+    const firstTime = new Date(first.usedAt).getTime();
+    const secondTime = new Date(second.usedAt).getTime();
+    if (!Number.isFinite(firstTime)) return Number.isFinite(secondTime) ? 1 : 0;
+    if (!Number.isFinite(secondTime)) return -1;
+    return secondTime - firstTime;
+  });
   historyBody.innerHTML = receipts.length
     ? receipts.map((receipt, index) => {
         const usedAt = new Date(receipt.usedAt);
@@ -5261,8 +5267,8 @@ function bindLoyaltyForms() {
       notice.hidden = false;
       return;
     }
-    if (file.size > 6 * 1024 * 1024) {
-      notice.textContent = "Ảnh biên lai tối đa 6 MB.";
+    if (file.size > 20 * 1024 * 1024) {
+      notice.textContent = "Ảnh biên lai gốc tối đa 20 MB.";
       notice.hidden = false;
       return;
     }
@@ -5274,16 +5280,21 @@ function bindLoyaltyForms() {
     invoiceResult.hidden = true;
 
     try {
+      notice.textContent = "Đang tối ưu ảnh biên lai...";
+      const uploadFile = await compressLoyaltyReceipt(file);
+      if (uploadFile.size > 6 * 1024 * 1024) {
+        throw new Error("Ảnh sau khi tối ưu vẫn vượt quá giới hạn 6 MB. Vui lòng chọn ảnh nhỏ hơn hoặc chụp lại.");
+      }
       const dataUrl = await new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(String(reader.result || ""));
         reader.onerror = () => reject(new Error("Không đọc được tệp ảnh."));
-        reader.readAsDataURL(file);
+        reader.readAsDataURL(uploadFile);
       });
       const response = await fetch("/api/scan-invoice", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mimeType: file.type, imageData: dataUrl }),
+        body: JSON.stringify({ mimeType: uploadFile.type, imageData: dataUrl }),
       });
       const result = await response.json();
       if (!response.ok || !result.ok) throw new Error(result.message || "Không quét được biên lai.");
@@ -5299,6 +5310,39 @@ function bindLoyaltyForms() {
       notice.hidden = false;
       scanningReceipt = false;
       receiptInput.disabled = false;
+    }
+  }
+
+  async function compressLoyaltyReceipt(file) {
+    if (typeof createImageBitmap !== "function") return file;
+
+    let image;
+    try {
+      image = await createImageBitmap(file);
+      const maxDimension = 1920;
+      const scale = Math.min(1, maxDimension / Math.max(image.width, image.height));
+      if (scale === 1 && file.size <= 600 * 1024) return file;
+
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(image.width * scale));
+      canvas.height = Math.max(1, Math.round(image.height * scale));
+      const context = canvas.getContext("2d");
+      if (!context) return file;
+      context.fillStyle = "#fff";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+      let quality = 0.82;
+      let compressed = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
+      while (compressed && compressed.size > 600 * 1024 && quality > 0.72) {
+        quality = Math.max(0.72, quality - 0.05);
+        compressed = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
+      }
+      return compressed && compressed.size < file.size ? compressed : file;
+    } catch {
+      return file;
+    } finally {
+      image?.close?.();
     }
   }
 
