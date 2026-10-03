@@ -5307,6 +5307,17 @@ html[data-theme="light"] .ad-banner-preview {
   cursor: pointer;
 }
 
+.loyalty-benefits-title {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  margin: 0;
+  padding: 10px 14px;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 850;
+}
+
 .loyalty-benefits summary::-webkit-details-marker {
   display: none;
 }
@@ -5789,6 +5800,11 @@ html[data-theme="light"] body[data-mode="admin"] .admin-login .login-box {
 
 .loyalty-benefits summary {
   min-height: 70px;
+  padding: 12px;
+}
+
+.loyalty-benefits-title {
+  min-height: 54px;
   padding: 12px;
 }
 

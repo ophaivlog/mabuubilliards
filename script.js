@@ -5358,6 +5358,7 @@ function bindLoyaltyForms() {
 
   const hideMember = () => {
     memberCard.hidden = true;
+    receiptForm.hidden = true;
     receiptInput.value = "";
     receiptFileName.textContent = "Chưa chọn ảnh";
     receiptPreview.hidden = true;
@@ -5370,6 +5371,7 @@ function bindLoyaltyForms() {
 
   const showMember = (member) => {
     registrationForm.hidden = true;
+    receiptForm.hidden = false;
     memberCard.hidden = false;
     historyExpanded = false;
     document.querySelector("#loyaltyMemberName").textContent = member.name;
