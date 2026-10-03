@@ -309,26 +309,6 @@
               <button class="primary-action" type="submit">Tạo hội viên</button>
             </form>
 
-            <form id="loyaltyReceiptForm" class="loyalty-form loyalty-receipt-form" hidden>
-              <input id="loyaltyReceipt" class="loyalty-file-input" type="file" accept="image/jpeg,image/png,image/webp" />
-              <label class="loyalty-file-button" for="loyaltyReceipt">
-                <span>＋ Chọn ảnh biên lai tích điểm</span>
-              </label>
-              <span id="loyaltyReceiptFileName" class="loyalty-file-name">Chưa chọn ảnh</span>
-              <p class="loyalty-upload-hint">Vui lòng chụp trọn hóa đơn, rõ nét, không bị lóa hoặc che khuất. Chỉ nhận hóa đơn có ngày in trong 2 ngày gần nhất.</p>
-            </form>
-            <div id="loyaltyReceiptPreview" class="loyalty-receipt-preview" hidden>
-              <img alt="Ảnh biên lai chuyển khoản đã chọn" />
-            </div>
-            <div id="loyaltyReceiptNotice" class="loyalty-notice" role="status" hidden></div>
-            <section id="loyaltyInvoiceResult" class="loyalty-invoice-result" hidden aria-live="polite">
-              <h3>Thông tin đọc được từ biên lai</h3>
-              <div id="loyaltyInvoiceFields" class="loyalty-invoice-fields"></div>
-              <div id="loyaltyInvoiceItems" class="loyalty-invoice-items"></div>
-              <div id="loyaltyInvoiceValidation" class="loyalty-notice" role="status" hidden></div>
-              <button id="confirmLoyaltyPoints" class="primary-action" type="button" disabled hidden>Tích điểm</button>
-            </section>
-
             <section id="loyaltyMemberCard" class="loyalty-member" hidden aria-live="polite">
               <div class="loyalty-member-scorecard">
                 <div class="loyalty-member-top">
@@ -357,6 +337,26 @@
                   <div><small>Chi tiêu tương ứng</small><strong id="loyaltyMemberAnnualSpend">0 ₫</strong></div>
                 </article>
               </div>
+
+              <form id="loyaltyReceiptForm" class="loyalty-form loyalty-receipt-form" hidden>
+                <input id="loyaltyReceipt" class="loyalty-file-input" type="file" accept="image/jpeg,image/png,image/webp" />
+                <label class="loyalty-file-button" for="loyaltyReceipt">
+                  <span>＋ Chọn ảnh biên lai tích điểm</span>
+                </label>
+                <span id="loyaltyReceiptFileName" class="loyalty-file-name">Chưa chọn ảnh</span>
+                <p class="loyalty-upload-hint">Vui lòng chụp trọn hóa đơn, rõ nét, không bị lóa hoặc che khuất. Chỉ nhận hóa đơn có ngày in trong 2 ngày gần nhất.</p>
+              </form>
+              <div id="loyaltyReceiptPreview" class="loyalty-receipt-preview" hidden>
+                <img alt="Ảnh biên lai chuyển khoản đã chọn" />
+              </div>
+              <div id="loyaltyReceiptNotice" class="loyalty-notice" role="status" hidden></div>
+              <section id="loyaltyInvoiceResult" class="loyalty-invoice-result" hidden aria-live="polite">
+                <h3>Thông tin đọc được từ biên lai</h3>
+                <div id="loyaltyInvoiceFields" class="loyalty-invoice-fields"></div>
+                <div id="loyaltyInvoiceItems" class="loyalty-invoice-items"></div>
+                <div id="loyaltyInvoiceValidation" class="loyalty-notice" role="status" hidden></div>
+                <button id="confirmLoyaltyPoints" class="primary-action" type="button" disabled hidden>Tích điểm</button>
+              </section>
 
               <section class="loyalty-benefits" aria-labelledby="loyaltyBenefitsTitle">
                 <h3 class="loyalty-benefits-title" id="loyaltyBenefitsTitle">🎁 Quyền lợi của bạn</h3>
